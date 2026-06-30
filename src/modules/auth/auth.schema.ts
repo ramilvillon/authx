@@ -5,6 +5,7 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
     grant_type: z.literal('password'),
     username: z.string().email(),
     password: z.string().min(1),
+    audience: z.string().min(1),
   }),
   z.object({
     grant_type: z.literal('refresh_token'),

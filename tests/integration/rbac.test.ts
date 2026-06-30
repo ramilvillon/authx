@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert'
-import { authHeader, makeTestApp } from '../helpers.ts'
+import { authHeader, makeTestApp, seedDefaultService } from '../helpers.ts'
 
 async function registerAndId(
   app: ReturnType<typeof makeTestApp>['app'],
@@ -14,9 +14,15 @@ async function registerAndId(
 }
 
 Deno.test('non-admin cannot list users', async () => {
-  const { app } = makeTestApp()
-  await registerAndId(app, 'a@b.com')
-  const { Authorization } = await authHeader(app, 'a@b.com', 'pw123456')
+  const { app, orgRepo } = makeTestApp()
+  const userId = await registerAndId(app, 'a@b.com')
+  const audience = await seedDefaultService(orgRepo, userId)
+  const { Authorization } = await authHeader(
+    app,
+    'a@b.com',
+    'pw123456',
+    audience,
+  )
   assertEquals(
     (await app.request('/users', { headers: { Authorization } })).status,
     403,
@@ -24,10 +30,16 @@ Deno.test('non-admin cannot list users', async () => {
 })
 
 Deno.test('admin can list users', async () => {
-  const { app, userRepo } = makeTestApp()
+  const { app, userRepo, orgRepo } = makeTestApp()
   const id = await registerAndId(app, 'admin@b.com')
   await userRepo.assignRole(id, 'admin')
-  const { Authorization } = await authHeader(app, 'admin@b.com', 'pw123456')
+  const audience = await seedDefaultService(orgRepo, id)
+  const { Authorization } = await authHeader(
+    app,
+    'admin@b.com',
+    'pw123456',
+    audience,
+  )
   assertEquals(
     (await app.request('/users', { headers: { Authorization } })).status,
     200,
@@ -35,10 +47,11 @@ Deno.test('admin can list users', async () => {
 })
 
 Deno.test('user can read self but not others; admin can read others', async () => {
-  const { app, userRepo } = makeTestApp()
+  const { app, userRepo, orgRepo } = makeTestApp()
   const aId = await registerAndId(app, 'a@b.com')
   const bId = await registerAndId(app, 'b@b.com')
-  const aAuth = await authHeader(app, 'a@b.com', 'pw123456')
+  const audience = await seedDefaultService(orgRepo, aId)
+  const aAuth = await authHeader(app, 'a@b.com', 'pw123456', audience)
   assertEquals(
     (await app.request(`/users/${aId}`, {
       headers: { Authorization: aAuth.Authorization },
@@ -53,7 +66,7 @@ Deno.test('user can read self but not others; admin can read others', async () =
   )
 
   await userRepo.assignRole(aId, 'admin')
-  const aAdmin = await authHeader(app, 'a@b.com', 'pw123456')
+  const aAdmin = await authHeader(app, 'a@b.com', 'pw123456', audience)
   assertEquals(
     (await app.request(`/users/${bId}`, {
       headers: { Authorization: aAdmin.Authorization },
@@ -63,9 +76,15 @@ Deno.test('user can read self but not others; admin can read others', async () =
 })
 
 Deno.test('PATCH /users/:id rejects an empty body, accepts a valid update', async () => {
-  const { app } = makeTestApp()
+  const { app, orgRepo } = makeTestApp()
   const id = await registerAndId(app, 'a@b.com')
-  const { Authorization } = await authHeader(app, 'a@b.com', 'pw123456')
+  const audience = await seedDefaultService(orgRepo, id)
+  const { Authorization } = await authHeader(
+    app,
+    'a@b.com',
+    'pw123456',
+    audience,
+  )
 
   const empty = await app.request(`/users/${id}`, {
     method: 'PATCH',

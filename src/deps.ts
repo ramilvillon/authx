@@ -14,6 +14,8 @@ import {
 import { createDrizzleUserRepository } from './modules/users/users.repository.drizzle.ts'
 import { createDrizzleRefreshTokenRepository } from './modules/auth/token.repository.drizzle.ts'
 import { createDrizzleSocialAccountRepository } from './modules/auth/social.repository.drizzle.ts'
+import { createDrizzleOrgRepository } from './modules/orgs/orgs.repository.drizzle.ts'
+import { createDrizzleRbacRepository } from './modules/rbac/rbac.repository.drizzle.ts'
 import { type KeySet, loadKeySet } from './lib/keys.ts'
 
 export type Deps = {
@@ -28,6 +30,8 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const userRepo = createDrizzleUserRepository(db)
   const tokenRepo = createDrizzleRefreshTokenRepository(db)
   const socialRepo = createDrizzleSocialAccountRepository(db)
+  const orgRepo = createDrizzleOrgRepository(db)
+  const rbacRepo = createDrizzleRbacRepository(db)
   const keySet = await loadKeySet(config.jwtPrivateKey, config.jwtPublicKey)
   return {
     config,
@@ -40,6 +44,8 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       userRepo,
       tokenRepo,
       socialRepo,
+      orgRepo,
+      rbacRepo,
       config,
       keySet,
     }),
