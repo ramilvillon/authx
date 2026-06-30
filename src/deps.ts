@@ -16,6 +16,10 @@ import { createDrizzleRefreshTokenRepository } from './modules/auth/token.reposi
 import { createDrizzleSocialAccountRepository } from './modules/auth/social.repository.drizzle.ts'
 import { createDrizzleOrgRepository } from './modules/orgs/orgs.repository.drizzle.ts'
 import { createDrizzleRbacRepository } from './modules/rbac/rbac.repository.drizzle.ts'
+import {
+  type AdminService,
+  createAdminService,
+} from './modules/admin/admin.service.ts'
 import { type KeySet, loadKeySet } from './lib/keys.ts'
 
 export type Deps = {
@@ -23,6 +27,7 @@ export type Deps = {
   keySet: KeySet
   userService: UserService
   authService: AuthService
+  adminService: AdminService
   rateStore: RateLimitStore
 }
 
@@ -49,6 +54,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       config,
       keySet,
     }),
+    adminService: createAdminService({ orgRepo, rbacRepo }),
   }
 }
 

@@ -1,5 +1,10 @@
 import { assertEquals } from '@std/assert'
-import { authHeader, makeTestApp, seedDefaultService } from '../helpers.ts'
+import {
+  authHeader,
+  grantPermissions,
+  makeTestApp,
+  seedDefaultService,
+} from '../helpers.ts'
 
 async function registerAndId(
   app: ReturnType<typeof makeTestApp>['app'],
@@ -30,10 +35,10 @@ Deno.test('non-admin cannot list users', async () => {
 })
 
 Deno.test('admin can list users', async () => {
-  const { app, userRepo, orgRepo } = makeTestApp()
+  const { app, orgRepo, rbacRepo } = makeTestApp()
   const id = await registerAndId(app, 'admin@b.com')
-  await userRepo.assignRole(id, 'admin')
   const audience = await seedDefaultService(orgRepo, id)
+  await grantPermissions(orgRepo, rbacRepo, audience, id, ['users:list'])
   const { Authorization } = await authHeader(
     app,
     'admin@b.com',
@@ -47,7 +52,7 @@ Deno.test('admin can list users', async () => {
 })
 
 Deno.test('user can read self but not others; admin can read others', async () => {
-  const { app, userRepo, orgRepo } = makeTestApp()
+  const { app, orgRepo, rbacRepo } = makeTestApp()
   const aId = await registerAndId(app, 'a@b.com')
   const bId = await registerAndId(app, 'b@b.com')
   const audience = await seedDefaultService(orgRepo, aId)
@@ -65,7 +70,7 @@ Deno.test('user can read self but not others; admin can read others', async () =
     403,
   )
 
-  await userRepo.assignRole(aId, 'admin')
+  await grantPermissions(orgRepo, rbacRepo, audience, aId, ['users:read:any'])
   const aAdmin = await authHeader(app, 'a@b.com', 'pw123456', audience)
   assertEquals(
     (await app.request(`/users/${bId}`, {

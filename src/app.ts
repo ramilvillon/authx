@@ -15,6 +15,7 @@ import { makeRateLimiter } from './middleware/rate-limit.ts'
 import users from './modules/users/users.routes.ts'
 import auth from './modules/auth/auth.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
+import admin from './modules/admin/admin.routes.ts'
 
 export function createApp(deps: Deps) {
   const logger = createLogger(deps.config)
@@ -48,6 +49,7 @@ export function createApp(deps: Deps) {
     .route('/users', users)
     .route('/oauth', auth)
     .route('/.well-known', wellknown)
+    .route('/', admin)
 
   // Registered after the routes so the spec can introspect every mounted path.
   app.get(

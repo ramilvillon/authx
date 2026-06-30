@@ -13,8 +13,9 @@ function appWith(user: { id: string; permissions: string[] }) {
       c.set('user', {
         id: user.id,
         email: 'x',
-        roles: [],
         permissions: user.permissions,
+        org: 'o1',
+        aud: 'test-service',
       })
       await next()
     })
