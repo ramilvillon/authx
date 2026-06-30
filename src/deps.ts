@@ -16,6 +16,8 @@ import { createDrizzleRefreshTokenRepository } from './modules/auth/token.reposi
 import { createDrizzleSocialAccountRepository } from './modules/auth/social.repository.drizzle.ts'
 import { createDrizzleOrgRepository } from './modules/orgs/orgs.repository.drizzle.ts'
 import { createDrizzleRbacRepository } from './modules/rbac/rbac.repository.drizzle.ts'
+import { createDrizzleSessionRepository } from './modules/auth/session.repository.drizzle.ts'
+import { createDrizzleAuthCodeRepository } from './modules/auth/authcode.repository.drizzle.ts'
 import {
   type AdminService,
   createAdminService,
@@ -37,6 +39,8 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const socialRepo = createDrizzleSocialAccountRepository(db)
   const orgRepo = createDrizzleOrgRepository(db)
   const rbacRepo = createDrizzleRbacRepository(db)
+  const sessionRepo = createDrizzleSessionRepository(db)
+  const authCodeRepo = createDrizzleAuthCodeRepository(db)
   const keySet = await loadKeySet(config.jwtPrivateKey, config.jwtPublicKey)
   return {
     config,
@@ -53,6 +57,8 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       rbacRepo,
       config,
       keySet,
+      sessionRepo,
+      authCodeRepo,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
   }
