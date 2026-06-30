@@ -6,6 +6,7 @@ import type {
 } from './token.repository.ts'
 import type { SocialAccountRepository } from './social.repository.ts'
 import type { TokenPair } from './auth.schema.ts'
+import type { KeySet } from '../../lib/keys.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { signAccessToken } from '../../lib/jwt.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
@@ -18,8 +19,9 @@ export function createAuthService(deps: {
   tokenRepo: RefreshTokenRepository
   socialRepo: SocialAccountRepository
   config: Config
+  keySet: KeySet
 }) {
-  const { userRepo, tokenRepo, config } = deps
+  const { userRepo, tokenRepo, config, keySet } = deps
 
   // Computed once and reused so failed logins for missing/passwordless users
   // still pay the bcrypt cost, equalizing response timing (no user enumeration).
@@ -34,7 +36,9 @@ export function createAuthService(deps: {
   async function issueTokens(userId: string): Promise<TokenPair> {
     const access_token = await signAccessToken({
       sub: userId,
-      secret: config.jwtSecret,
+      issuer: config.issuer,
+      privateKeyPem: keySet.privateKeyPem,
+      kid: keySet.kid,
       ttlSeconds: config.accessTokenTtl,
     })
     const refresh = generateRefreshToken()
@@ -90,7 +94,9 @@ export function createAuthService(deps: {
       // successful (irreversible) rotation is returning the response.
       const access_token = await signAccessToken({
         sub: existing.userId,
-        secret: config.jwtSecret,
+        issuer: config.issuer,
+        privateKeyPem: keySet.privateKeyPem,
+        kid: keySet.kid,
         ttlSeconds: config.accessTokenTtl,
       })
       // Atomic rotation; a false result means a concurrent rotation already
