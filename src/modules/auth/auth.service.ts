@@ -248,6 +248,10 @@ export function createAuthService(deps: {
         codeChallengeMethod: string
       },
     ): Promise<string> {
+      // ponytail: guard here (the only writer) so the DB never holds a non-S256 record.
+      if (p.codeChallengeMethod !== 'S256') {
+        throw AppError.badRequest('unsupported code_challenge_method')
+      }
       const code = generateRefreshToken()
       await authCodeRepo.create({
         id: crypto.randomUUID(),
@@ -298,15 +302,9 @@ export function createAuthService(deps: {
       if (!service || service.clientId !== input.clientId) {
         throw AppError.badRequest('invalid_grant')
       }
-      // Confidential clients must authenticate (secret stored as sha256, like Phase 1).
-      if (service.type === 'confidential') {
-        const ok = service.clientSecretHash !== null &&
-          input.clientSecret !== undefined &&
-          (await hashToken(input.clientSecret)) === service.clientSecretHash
-        if (!ok) throw AppError.unauthorized('invalid_client')
-      }
       // Replay of a consumed code: the code (and any token minted from it) may be
       // compromised — revoke the user's refresh-token family.
+      // Must fire BEFORE client-auth so a replay with a wrong secret still revokes.
       if (record.consumedAt) {
         await tokenRepo.revokeAllForUser(record.userId)
         throw AppError.badRequest('invalid_grant')
@@ -316,6 +314,13 @@ export function createAuthService(deps: {
       }
       if (record.redirectUri !== input.redirectUri) {
         throw AppError.badRequest('invalid_grant')
+      }
+      // Confidential clients must authenticate (secret stored as sha256, like Phase 1).
+      if (service.type === 'confidential') {
+        const ok = service.clientSecretHash !== null &&
+          input.clientSecret !== undefined &&
+          (await hashToken(input.clientSecret)) === service.clientSecretHash
+        if (!ok) throw AppError.unauthorized('invalid_client')
       }
       if (!(await verifyChallenge(input.codeVerifier, record.codeChallenge))) {
         throw AppError.badRequest('invalid_grant')

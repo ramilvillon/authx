@@ -3,6 +3,7 @@ import { makeTestDeps } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { hashPassword } from '../../src/lib/password.ts'
 import { verifyAccessToken } from '../../src/lib/jwt.ts'
+import { hashToken } from '../../src/lib/tokens.ts'
 
 const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
 const REDIRECT = 'https://app.example/cb'
@@ -120,6 +121,94 @@ Deno.test('exchange rejects a replayed code', async () => {
     threw = true
   }
   assert(threw)
+})
+
+Deno.test('confidential client: replay with wrong secret still revokes token family', async () => {
+  const ctx = makeTestDeps()
+  const now = new Date()
+  const user = await ctx.userRepo.create({
+    id: crypto.randomUUID(),
+    email: 'conf@b.com',
+    passwordHash: await hashPassword('pw123456'),
+    createdAt: now,
+    updatedAt: now,
+  })
+  const org = await ctx.orgRepo.createOrg({
+    id: crypto.randomUUID(),
+    slug: 'conf-org',
+    name: 'Conf Org',
+    createdAt: now,
+  })
+  await ctx.orgRepo.createService({
+    id: crypto.randomUUID(),
+    orgId: org.id,
+    clientId: 'cid_conf',
+    clientSecretHash: await hashToken('s3cret'),
+    name: 'Conf App',
+    slug: 'conf-app',
+    audience: 'conf-app',
+    type: 'confidential',
+    redirectUris: [REDIRECT],
+    createdAt: now,
+  })
+  await ctx.orgRepo.addMember({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    orgId: org.id,
+    createdAt: now,
+  })
+
+  // Issue a code for the confidential service.
+  const service = await ctx.deps.authService.validateAuthorizeRequest({
+    clientId: 'cid_conf',
+    redirectUri: REDIRECT,
+    codeChallenge: await s256Challenge(VERIFIER),
+    codeChallengeMethod: 'S256',
+  })
+  const code = await ctx.deps.authService.issueAuthorizationCode(
+    user.id,
+    service,
+    {
+      redirectUri: REDIRECT,
+      scope: '',
+      codeChallenge: await s256Challenge(VERIFIER),
+      codeChallengeMethod: 'S256',
+    },
+  )
+
+  // First exchange succeeds — capture the refresh token.
+  const { refresh_token } = await ctx.deps.authService
+    .exchangeAuthorizationCode({
+      code,
+      redirectUri: REDIRECT,
+      codeVerifier: VERIFIER,
+      clientId: 'cid_conf',
+      clientSecret: 's3cret',
+    })
+
+  // Replay with a WRONG secret: must throw, AND must revoke the family.
+  let threw = false
+  try {
+    await ctx.deps.authService.exchangeAuthorizationCode({
+      code,
+      redirectUri: REDIRECT,
+      codeVerifier: VERIFIER,
+      clientId: 'cid_conf',
+      clientSecret: 'wrong',
+    })
+  } catch {
+    threw = true
+  }
+  assert(threw, 'replay with wrong secret should throw')
+
+  // The refresh-token family must now be revoked.
+  let refreshThrew = false
+  try {
+    await ctx.deps.authService.refreshGrant(refresh_token)
+  } catch {
+    refreshThrew = true
+  }
+  assert(refreshThrew, 'refresh token should be revoked after replay detection')
 })
 
 Deno.test('loginCreateSession + userIdForSession round-trip; bad password throws', async () => {
