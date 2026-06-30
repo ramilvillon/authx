@@ -9,6 +9,13 @@ dependency-free so the `hc` RPC client keeps full type inference.
 
 - **OAuth2 auth** — password grant + refresh grant with rotation and
   reuse-detection (`/oauth/token`, `/oauth/revoke`)
+- **RS256 + JWKS** — tokens signed with an RSA keypair; public key published at
+  `/.well-known/jwks.json` so services verify locally (OIDC discovery at
+  `/.well-known/openid-configuration`)
+- **Audience-scoped tokens** — `audience` param on `/oauth/token` mints a token
+  carrying exactly that service's permissions for the user
+- **Multi-org + management API** — orgs, app services, members, and per-service
+  RBAC managed via the management API, gated by the reserved `platform` audience
 - **Google social login** — verified-email requirement (`/oauth/google`)
 - **RBAC** — roles + permissions with ownership checks (self-or-permission)
 - **Pluggable rate limiting** — in-memory store, stricter throttle on auth
@@ -33,9 +40,10 @@ npm install           # installs husky and activates the pre-commit hook
 
 ```bash
 cp .env.example .env
+deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
 docker compose up -d mysql      # start MySQL
 deno task db:migrate            # apply Drizzle migrations
-deno task db:seed               # seed RBAC roles + permissions
+deno task db:seed               # seed the platform tenant + bootstrap admin
 deno task dev                   # start the API with --watch
 ```
 
@@ -50,25 +58,29 @@ curl localhost:3000/health      # {"status":"ok"}
 Copy `.env.example` to `.env` and adjust. Config is validated at startup
 (`src/config.ts`); missing required values fail fast.
 
-| Variable               | Default                              | Notes                                                             |
-| ---------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `PORT`                 | `3000`                               | HTTP port                                                         |
-| `LOG_LEVEL`            | `debug`                              | `debug` enables pino-pretty output                                |
-| `DB_HOST`              | `localhost`                          | MySQL host                                                        |
-| `DB_PORT`              | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                       |
-| `DB_USER`              | —                                    | **required**; MySQL user                                          |
-| `DB_PASS`              | _(empty)_                            | MySQL password                                                    |
-| `DB_NAME`              | —                                    | **required**; MySQL database name                                 |
-| `JWT_SECRET`           | —                                    | **required**; signs access tokens                                 |
-| `ACCESS_TOKEN_TTL`     | `900`                                | access-token lifetime (seconds)                                   |
-| `REFRESH_TOKEN_TTL`    | `2592000`                            | refresh-token lifetime (seconds)                                  |
-| `GOOGLE_CLIENT_ID`     | —                                    | Google OAuth client ID                                            |
-| `GOOGLE_CLIENT_SECRET` | —                                    | Google OAuth client secret                                        |
-| `GOOGLE_REDIRECT_URI`  | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                              |
-| `RATE_LIMIT_WINDOW_MS` | `60000`                              | global limiter window                                             |
-| `RATE_LIMIT_MAX`       | `100`                                | global limiter max requests/window                                |
-| `TRUST_PROXY`          | `false`                              | set `true` only behind a trusted proxy (honors `X-Forwarded-For`) |
-| `REDIS_URL`            | _(unset)_                            | optional; enable for a shared rate-limit store                    |
+| Variable                   | Default                              | Notes                                                              |
+| -------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `PORT`                     | `3000`                               | HTTP port                                                          |
+| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                 |
+| `DB_HOST`                  | `localhost`                          | MySQL host                                                         |
+| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                        |
+| `DB_USER`                  | —                                    | **required**; MySQL user                                           |
+| `DB_PASS`                  | _(empty)_                            | MySQL password                                                     |
+| `DB_NAME`                  | —                                    | **required**; MySQL database name                                  |
+| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`        |
+| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS           |
+| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                        |
+| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin |
+| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; password for the bootstrap admin                         |
+| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                    |
+| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                   |
+| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                             |
+| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                         |
+| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                               |
+| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                              |
+| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                 |
+| `TRUST_PROXY`              | `false`                              | set `true` only behind a trusted proxy (honors `X-Forwarded-For`)  |
+| `REDIS_URL`                | _(unset)_                            | optional; enable for a shared rate-limit store                     |
 
 ### Google OAuth
 
@@ -82,20 +94,50 @@ are rejected.
 
 ## API endpoints
 
-| Method   | Path            | Auth                               | Description                               |
-| -------- | --------------- | ---------------------------------- | ----------------------------------------- |
-| `GET`    | `/health`       | —                                  | Liveness check                            |
-| `POST`   | `/users`        | —                                  | Register a user (gets `user` role)        |
-| `GET`    | `/users/me`     | Bearer                             | Current authenticated user                |
-| `GET`    | `/users`        | Bearer + `users:list`              | List users                                |
-| `GET`    | `/users/:id`    | Bearer, self or `users:read:any`   | Get a user                                |
-| `PATCH`  | `/users/:id`    | Bearer, self or `users:update:any` | Update a user                             |
-| `DELETE` | `/users/:id`    | Bearer, self or `users:delete:any` | Delete a user                             |
-| `POST`   | `/oauth/token`  | —                                  | OAuth2 password or refresh grant          |
-| `POST`   | `/oauth/revoke` | —                                  | Revoke a refresh token                    |
-| `GET`    | `/oauth/google` | —                                  | Google social login (redirect + callback) |
-| `GET`    | `/openapi`      | —                                  | OpenAPI 3 spec (JSON)                     |
-| `GET`    | `/docs`         | —                                  | Scalar API reference UI                   |
+| Method   | Path                                | Auth                               | Description                               |
+| -------- | ----------------------------------- | ---------------------------------- | ----------------------------------------- |
+| `GET`    | `/health`                           | —                                  | Liveness check                            |
+| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)        |
+| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                |
+| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                |
+| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                |
+| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                             |
+| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                             |
+| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password or refresh grant          |
+| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                    |
+| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback) |
+| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                 |
+| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                   |
+| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                     |
+| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                   |
+
+`POST /oauth/token` accepts an optional `audience` (a service's `audience`
+string); the returned access token then carries exactly the permissions that
+user has in that service. Omit it for the default audience.
+
+### Management API
+
+These routes require a Bearer token minted for the reserved `platform` audience
+(`requireAuth` + `requirePlatform`) plus the listed permission.
+
+| Method   | Path                        | Permission       | Description                          |
+| -------- | --------------------------- | ---------------- | ------------------------------------ |
+| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization               |
+| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                   |
+| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                  |
+| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret) |
+| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services               |
+| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                         |
+| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                      |
+| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service          |
+| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service    |
+| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role         |
+| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user              |
+
+Setting `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` before
+`deno task
+db:seed` creates that user as a platform `admin`. Get an admin token
+with a password grant for `audience: "platform"`.
 
 Example password-grant flow:
 
@@ -160,5 +202,6 @@ unset (so they're ignored unless you run `deno task test:e2e`, which loads
 ```bash
 deno task db:generate   # generate a migration from schema changes
 deno task db:migrate    # apply migrations
-deno task db:seed       # seed RBAC roles + permissions
+deno task db:seed       # seed the platform tenant + bootstrap admin
+deno task keys:gen      # print a fresh RS256 keypair as JWT_PRIVATE_KEY/JWT_PUBLIC_KEY env lines
 ```
