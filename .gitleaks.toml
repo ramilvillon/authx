@@ -1,0 +1,8 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore local env example placeholders"
+paths = ['''\.env\.example''']
