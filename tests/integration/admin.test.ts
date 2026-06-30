@@ -2,8 +2,10 @@ import { assert, assertEquals } from '@std/assert'
 import { decode } from 'hono/jwt'
 import {
   authHeader,
+  grantPermissions,
   makeTestApp,
   PLATFORM_PERMISSIONS,
+  seedDefaultService,
   seedPlatformAdmin,
 } from '../helpers.ts'
 
@@ -39,6 +41,36 @@ Deno.test('missing permission -> 403', async () => {
     '/orgs',
     json(token, { slug: 'acme', name: 'Acme' }),
   )
+  assertEquals(res.status, 403)
+})
+
+Deno.test('a service-scoped token with a colliding permission cannot reach the admin API', async () => {
+  const ctx = makeTestApp()
+  // A normal user in a normal service whose RBAC happens to define 'orgs:write'.
+  const user = await (await ctx.app.request('/users', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'attacker@evil.com', password: 'pw123456' }),
+  })).json()
+  const audience = await seedDefaultService(ctx.orgRepo, user.id, 'evil')
+  await grantPermissions(ctx.orgRepo, ctx.rbacRepo, audience, user.id, [
+    'orgs:write',
+  ])
+  const { Authorization } = await authHeader(
+    ctx.app,
+    'attacker@evil.com',
+    'pw123456',
+    audience,
+  )
+  // Scope carries orgs:write, but the token's aud is 'evil', not 'platform'.
+  const res = await ctx.app.request('/orgs', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: Authorization,
+    },
+    body: JSON.stringify({ slug: 'acme', name: 'Acme' }),
+  })
   assertEquals(res.status, 403)
 })
 
