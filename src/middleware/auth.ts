@@ -11,7 +11,7 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const token = header.slice('Bearer '.length)
   let sub: string
   try {
-    const payload = await verifyAccessToken(token, c.var.config.jwtSecret)
+    const payload = await verifyAccessToken(token, c.var.keySet.publicKeyPem)
     sub = payload.sub
   } catch {
     throw AppError.unauthorized('invalid token')

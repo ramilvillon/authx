@@ -1,6 +1,10 @@
 import { assert, assertEquals } from '@std/assert'
-import { authHeader, makeTestApp } from '../helpers.ts'
+import { authHeader, keySet, makeTestApp } from '../helpers.ts'
 import { signAccessToken } from '../../src/lib/jwt.ts'
+import { generateRsaKeyPairPem } from '../../src/lib/keys.ts'
+
+// A different keypair — tokens signed with it are invalid on the test server.
+const { privateKeyPem: wrongPrivateKeyPem } = await generateRsaKeyPairPem()
 
 async function register(app: ReturnType<typeof makeTestApp>['app']) {
   await app.request('/users', {
@@ -61,15 +65,12 @@ Deno.test('/users/me without token -> 401', async () => {
   assertEquals(res.status, 401)
 })
 
-Deno.test('/users/me rejects tampered, wrong-secret, and expired tokens', async () => {
+Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () => {
   const { app } = makeTestApp()
   await register(app)
   const { Authorization } = await authHeader(app, 'a@b.com', 'pw123456')
 
-  // tampered: flip the first char of the signature. The last base64url char of
-  // a 32-byte HMAC signature only carries 4 significant bits, so flipping it can
-  // decode to the same bytes (a no-op tamper); the first char always changes the
-  // decoded signature, guaranteeing a genuine mismatch.
+  // tampered: flip the first char of the signature.
   const valid = Authorization.slice('Bearer '.length)
   const lastDot = valid.lastIndexOf('.')
   const sig = valid.slice(lastDot + 1)
@@ -82,23 +83,27 @@ Deno.test('/users/me rejects tampered, wrong-secret, and expired tokens', async 
     401,
   )
 
-  // wrong secret
-  const wrongSecret = await signAccessToken({
+  // wrong key: signed with a different RSA private key
+  const wrongKey = await signAccessToken({
     sub: 'someone',
-    secret: 'not-the-test-secret',
+    issuer: 'http://test.local',
+    privateKeyPem: wrongPrivateKeyPem,
+    kid: 'wrong',
     ttlSeconds: 900,
   })
   assertEquals(
     (await app.request('/users/me', {
-      headers: { Authorization: `Bearer ${wrongSecret}` },
+      headers: { Authorization: `Bearer ${wrongKey}` },
     })).status,
     401,
   )
 
-  // expired (negative ttl, signed with the correct secret)
+  // expired: signed with the correct key but negative TTL
   const expired = await signAccessToken({
     sub: 'someone',
-    secret: 'test-secret',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
     ttlSeconds: -1,
   })
   assertEquals(

@@ -14,25 +14,35 @@ import {
 import { createDrizzleUserRepository } from './modules/users/users.repository.drizzle.ts'
 import { createDrizzleRefreshTokenRepository } from './modules/auth/token.repository.drizzle.ts'
 import { createDrizzleSocialAccountRepository } from './modules/auth/social.repository.drizzle.ts'
+import { type KeySet, loadKeySet } from './lib/keys.ts'
 
 export type Deps = {
   config: Config
+  keySet: KeySet
   userService: UserService
   authService: AuthService
   rateStore: RateLimitStore
 }
 
-export function createDeps(config: Config, db: Database): Deps {
+export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const userRepo = createDrizzleUserRepository(db)
   const tokenRepo = createDrizzleRefreshTokenRepository(db)
   const socialRepo = createDrizzleSocialAccountRepository(db)
+  const keySet = await loadKeySet(config.jwtPrivateKey, config.jwtPublicKey)
   return {
     config,
+    keySet,
     rateStore: config.redisUrl
       ? createRedisRateLimitStore(config.redisUrl)
       : createMemoryRateLimitStore(),
     userService: createUserService({ repo: userRepo }),
-    authService: createAuthService({ userRepo, tokenRepo, socialRepo, config }),
+    authService: createAuthService({
+      userRepo,
+      tokenRepo,
+      socialRepo,
+      config,
+      keySet,
+    }),
   }
 }
 

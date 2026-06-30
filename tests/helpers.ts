@@ -8,12 +8,18 @@ import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { ROLE_GRANTS } from '../src/db/rbac-constants.ts'
 import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
 import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
+import { generateRsaKeyPairPem, loadKeySet } from '../src/lib/keys.ts'
+
+const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
+export const keySet = await loadKeySet(privateKeyPem, publicKeyPem)
 
 const testEnv = {
   DB_USER: 'app',
   DB_PASS: 'app',
   DB_NAME: 'app',
-  JWT_SECRET: 'test-secret',
+  JWT_PRIVATE_KEY: privateKeyPem,
+  JWT_PUBLIC_KEY: publicKeyPem,
+  JWT_ISSUER: 'http://test.local',
   LOG_LEVEL: 'silent',
 }
 
@@ -40,9 +46,16 @@ export function makeTestDeps(): TestContext {
   }
   const deps: Deps = {
     config,
+    keySet,
     rateStore: createMemoryRateLimitStore(),
     userService: createUserService({ repo: userRepo }),
-    authService: createAuthService({ userRepo, tokenRepo, socialRepo, config }),
+    authService: createAuthService({
+      userRepo,
+      tokenRepo,
+      socialRepo,
+      config,
+      keySet,
+    }),
   }
   return { deps, userRepo, socialRepo }
 }

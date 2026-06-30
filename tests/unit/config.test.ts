@@ -9,7 +9,9 @@ const base = {
   DB_USER: 'app',
   DB_PASS: 'app',
   DB_NAME: 'app',
-  JWT_SECRET: 'secret',
+  JWT_PRIVATE_KEY: 'pk',
+  JWT_PUBLIC_KEY: 'pub',
+  JWT_ISSUER: 'http://localhost:3000',
   ACCESS_TOKEN_TTL: '900',
   REFRESH_TOKEN_TTL: '2592000',
   GOOGLE_CLIENT_ID: 'gid',
@@ -39,6 +41,6 @@ Deno.test('loadConfig throws on missing DB_NAME', () => {
 })
 
 Deno.test('loadConfig throws on missing required value', () => {
-  const { JWT_SECRET: _omit, ...partial } = base
-  assertThrows(() => loadConfig(partial), Error, 'JWT_SECRET')
+  const { JWT_PRIVATE_KEY: _omit, ...partial } = base
+  assertThrows(() => loadConfig(partial), Error, 'JWT_PRIVATE_KEY')
 })

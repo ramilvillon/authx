@@ -5,12 +5,18 @@ import { createUserService } from '../../src/modules/users/users.service.ts'
 import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import type { SocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
 import { loadConfig } from '../../src/config.ts'
+import { generateRsaKeyPairPem, loadKeySet } from '../../src/lib/keys.ts'
+
+const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
+const keySet = await loadKeySet(privateKeyPem, publicKeyPem)
 
 function setup() {
   const config = loadConfig({
     DB_USER: 'app',
     DB_NAME: 'app',
-    JWT_SECRET: 'sec',
+    JWT_PRIVATE_KEY: privateKeyPem,
+    JWT_PUBLIC_KEY: publicKeyPem,
+    JWT_ISSUER: 'http://localhost:3000',
   })
   const userRepo = createInMemoryUserRepository({ user: [] })
   const tokenRepo = createInMemoryRefreshTokenRepository()
@@ -24,6 +30,7 @@ function setup() {
     tokenRepo,
     socialRepo,
     config,
+    keySet,
   })
   return { authService, userService }
 }

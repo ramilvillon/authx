@@ -8,7 +8,9 @@ const schema = z.object({
   DB_USER: z.string().min(1),
   DB_PASS: z.string().default(''),
   DB_NAME: z.string().min(1),
-  JWT_SECRET: z.string().min(1),
+  JWT_PRIVATE_KEY: z.string().min(1),
+  JWT_PUBLIC_KEY: z.string().min(1),
+  JWT_ISSUER: z.string().min(1),
   ACCESS_TOKEN_TTL: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
   GOOGLE_CLIENT_ID: z.string().default(''),
@@ -33,7 +35,9 @@ export type Config = {
     password: string
     name: string
   }
-  jwtSecret: string
+  jwtPrivateKey: string
+  jwtPublicKey: string
+  issuer: string
   accessTokenTtl: number
   refreshTokenTtl: number
   google: { clientId: string; clientSecret: string; redirectUri: string }
@@ -59,7 +63,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       password: e.DB_PASS,
       name: e.DB_NAME,
     },
-    jwtSecret: e.JWT_SECRET,
+    jwtPrivateKey: e.JWT_PRIVATE_KEY,
+    jwtPublicKey: e.JWT_PUBLIC_KEY,
+    issuer: e.JWT_ISSUER,
     accessTokenTtl: e.ACCESS_TOKEN_TTL,
     refreshTokenTtl: e.REFRESH_TOKEN_TTL,
     google: {
