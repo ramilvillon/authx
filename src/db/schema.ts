@@ -85,3 +85,27 @@ export const memberships = mysqlTable('memberships', {
   orgId: varchar('org_id', { length: 36 }).notNull(),
   createdAt: datetime('created_at').notNull(),
 }, (t) => ({ userOrg: unique().on(t.userId, t.orgId) }))
+
+export const sessions = mysqlTable('sessions', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: datetime('expires_at').notNull(),
+  revokedAt: datetime('revoked_at'),
+  createdAt: datetime('created_at').notNull(),
+})
+
+export const authorizationCodes = mysqlTable('authorization_codes', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  codeHash: varchar('code_hash', { length: 64 }).notNull().unique(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  appServiceId: varchar('app_service_id', { length: 36 }).notNull(),
+  redirectUri: varchar('redirect_uri', { length: 2048 }).notNull(),
+  codeChallenge: varchar('code_challenge', { length: 128 }).notNull(),
+  codeChallengeMethod: varchar('code_challenge_method', { length: 8 })
+    .notNull(),
+  scope: text('scope').notNull(),
+  expiresAt: datetime('expires_at').notNull(),
+  consumedAt: datetime('consumed_at'),
+  createdAt: datetime('created_at').notNull(),
+})

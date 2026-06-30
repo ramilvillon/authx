@@ -13,6 +13,8 @@ const schema = z.object({
   JWT_ISSUER: z.string().min(1),
   ACCESS_TOKEN_TTL: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
+  SSO_SESSION_TTL: z.coerce.number().default(2592000),
+  AUTH_CODE_TTL: z.coerce.number().default(60),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -40,6 +42,8 @@ export type Config = {
   issuer: string
   accessTokenTtl: number
   refreshTokenTtl: number
+  ssoSessionTtl: number
+  authCodeTtl: number
   google: { clientId: string; clientSecret: string; redirectUri: string }
   rateLimit: { windowMs: number; max: number }
   trustProxy: boolean
@@ -68,6 +72,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     issuer: e.JWT_ISSUER,
     accessTokenTtl: e.ACCESS_TOKEN_TTL,
     refreshTokenTtl: e.REFRESH_TOKEN_TTL,
+    ssoSessionTtl: e.SSO_SESSION_TTL,
+    authCodeTtl: e.AUTH_CODE_TTL,
     google: {
       clientId: e.GOOGLE_CLIENT_ID,
       clientSecret: e.GOOGLE_CLIENT_SECRET,
