@@ -45,6 +45,12 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
       })
       return row ? toService(row) : null
     },
+    async findServiceByClientId(clientId) {
+      const row = await db.query.appServices.findFirst({
+        where: eq(appServices.clientId, clientId),
+      })
+      return row ? toService(row) : null
+    },
     async listServicesByOrg(orgId) {
       const rows = await db.select().from(appServices).where(
         eq(appServices.orgId, orgId),

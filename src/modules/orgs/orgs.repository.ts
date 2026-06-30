@@ -32,6 +32,7 @@ export type OrgRepository = {
   createService(s: AppServiceRecord): Promise<AppServiceRecord>
   findServiceById(id: string): Promise<AppServiceRecord | null>
   findServiceByAudience(audience: string): Promise<AppServiceRecord | null>
+  findServiceByClientId(clientId: string): Promise<AppServiceRecord | null>
   listServicesByOrg(orgId: string): Promise<AppServiceRecord[]>
   addMember(m: MembershipRecord): Promise<void>
   removeMember(userId: string, orgId: string): Promise<void>
@@ -65,6 +66,12 @@ export function createInMemoryOrgRepository(): OrgRepository {
     findServiceByAudience(audience) {
       for (const s of services.values()) {
         if (s.audience === audience) return Promise.resolve({ ...s })
+      }
+      return Promise.resolve(null)
+    },
+    findServiceByClientId(clientId) {
+      for (const s of services.values()) {
+        if (s.clientId === clientId) return Promise.resolve({ ...s })
       }
       return Promise.resolve(null)
     },
