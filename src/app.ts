@@ -45,6 +45,10 @@ export function createApp(deps: Deps) {
       '/oauth/google',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
+    .use(
+      '/oauth/authorize',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
     .get('/health', (c) => c.json({ status: 'ok' }))
     .route('/users', users)
     .route('/oauth', auth)
