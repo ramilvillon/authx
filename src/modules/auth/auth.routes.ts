@@ -33,7 +33,7 @@ const auth = new Hono<AppEnv>()
       const body = c.req.valid('json')
       const svc = c.var.authService
       const pair = body.grant_type === 'password'
-        ? await svc.passwordGrant(body.username, body.password)
+        ? await svc.passwordGrant(body.username, body.password, body.audience)
         : await svc.refreshGrant(body.refresh_token)
       return c.json(pair, 200)
     },
@@ -78,6 +78,7 @@ const auth = new Hono<AppEnv>()
           content: json(resolver(tokenPairSchema)),
         },
         302: { description: 'Redirect to the Google consent screen' },
+        400: { description: 'Missing audience query param' },
         401: { description: 'Google profile missing or unverified' },
       },
     }),
@@ -89,11 +90,18 @@ const auth = new Hono<AppEnv>()
           401,
         )
       }
+      const audience = c.req.query('audience')
+      if (!audience) {
+        return c.json(
+          { error: { code: 'bad_request', message: 'audience required' } },
+          400,
+        )
+      }
       const pair = await c.var.authService.loginWithGoogle({
         providerAccountId: profile.id,
         email: profile.email,
         emailVerified: profile.verified_email ?? false,
-      })
+      }, audience)
       return c.json(pair, 200)
     },
   )

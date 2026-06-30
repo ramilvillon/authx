@@ -7,6 +7,8 @@ import type {
 import type { SocialAccountRepository } from './social.repository.ts'
 import type { TokenPair } from './auth.schema.ts'
 import type { KeySet } from '../../lib/keys.ts'
+import type { OrgRepository } from '../orgs/orgs.repository.ts'
+import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { signAccessToken } from '../../lib/jwt.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
@@ -18,10 +20,12 @@ export function createAuthService(deps: {
   userRepo: UserRepository
   tokenRepo: RefreshTokenRepository
   socialRepo: SocialAccountRepository
+  orgRepo: OrgRepository
+  rbacRepo: RbacRepository
   config: Config
   keySet: KeySet
 }) {
-  const { userRepo, tokenRepo, config, keySet } = deps
+  const { userRepo, tokenRepo, config, keySet, orgRepo, rbacRepo } = deps
 
   // Computed once and reused so failed logins for missing/passwordless users
   // still pay the bcrypt cost, equalizing response timing (no user enumeration).
@@ -33,27 +37,38 @@ export function createAuthService(deps: {
     return dummyHash
   }
 
-  // ponytail: appServiceId placeholder until auth routes carry service context (task 4+)
-  async function issueTokens(
+  async function issueTokensForService(
     userId: string,
-    appServiceId = '',
+    audience: string,
   ): Promise<TokenPair> {
+    const service = await orgRepo.findServiceByAudience(audience)
+    if (!service) throw AppError.badRequest('unknown audience')
+    if (!(await orgRepo.isMember(userId, service.orgId))) {
+      throw AppError.forbidden('not a member of this organization')
+    }
+    const scopes = await rbacRepo.permissionsForUserInService(
+      userId,
+      service.id,
+    )
     const access_token = await signAccessToken({
       sub: userId,
       issuer: config.issuer,
       privateKeyPem: keySet.privateKeyPem,
       kid: keySet.kid,
       ttlSeconds: config.accessTokenTtl,
+      aud: service.audience,
+      org: service.orgId,
+      scope: scopes.join(' '),
+      clientId: service.clientId,
     })
     const refresh = generateRefreshToken()
-    const record: NewRefreshToken = {
+    await tokenRepo.create({
       id: crypto.randomUUID(),
       userId,
-      appServiceId,
+      appServiceId: service.id,
       tokenHash: await hashToken(refresh),
       expiresAt: new Date(Date.now() + config.refreshTokenTtl * 1000),
-    }
-    await tokenRepo.create(record)
+    })
     return {
       access_token,
       refresh_token: refresh,
@@ -63,8 +78,11 @@ export function createAuthService(deps: {
   }
 
   return {
-    issueTokens,
-    async passwordGrant(email: string, password: string): Promise<TokenPair> {
+    async passwordGrant(
+      email: string,
+      password: string,
+      audience: string,
+    ): Promise<TokenPair> {
       const user = await userRepo.findByEmail(email)
       // Always run a bcrypt comparison to keep timing constant across the
       // missing-user, passwordless-user, and wrong-password branches.
@@ -73,7 +91,7 @@ export function createAuthService(deps: {
       if (!user || !user.passwordHash || !passwordOk) {
         throw AppError.unauthorized('invalid credentials')
       }
-      return issueTokens(user.id)
+      return issueTokensForService(user.id, audience)
     },
     async refreshGrant(refreshToken: string): Promise<TokenPair> {
       const hash = await hashToken(refreshToken)
@@ -88,11 +106,17 @@ export function createAuthService(deps: {
       }
       if (isExpired) throw AppError.unauthorized('invalid refresh token')
 
+      const service = await orgRepo.findServiceById(existing.appServiceId)
+      if (!service) throw AppError.unauthorized('invalid refresh token')
+      const scopes = await rbacRepo.permissionsForUserInService(
+        existing.userId,
+        service.id,
+      )
       const refresh = generateRefreshToken()
       const next: NewRefreshToken = {
         id: crypto.randomUUID(),
         userId: existing.userId,
-        appServiceId: existing.appServiceId,
+        appServiceId: service.id,
         tokenHash: await hashToken(refresh),
         expiresAt: new Date(Date.now() + config.refreshTokenTtl * 1000),
       }
@@ -104,6 +128,10 @@ export function createAuthService(deps: {
         privateKeyPem: keySet.privateKeyPem,
         kid: keySet.kid,
         ttlSeconds: config.accessTokenTtl,
+        aud: service.audience,
+        org: service.orgId,
+        scope: scopes.join(' '),
+        clientId: service.clientId,
       })
       // Atomic rotation; a false result means a concurrent rotation already
       // consumed this token (replay), so revoke the family and reject.
@@ -128,12 +156,13 @@ export function createAuthService(deps: {
         email: string
         emailVerified: boolean
       },
+      audience: string,
     ): Promise<TokenPair> {
       const existing = await deps.socialRepo.findByProviderAccount(
         'google',
         profile.providerAccountId,
       )
-      if (existing) return issueTokens(existing.userId)
+      if (existing) return issueTokensForService(existing.userId, audience)
 
       // Never create-or-link an account from an unverified provider email:
       // that would let an attacker take over an account by claiming its email.
@@ -141,25 +170,42 @@ export function createAuthService(deps: {
         throw AppError.forbidden('google account email is not verified')
       }
 
-      let user = await userRepo.findByEmail(profile.email)
+      const user = await userRepo.findByEmail(profile.email)
       if (!user) {
         const now = new Date()
-        user = await userRepo.create({
+        const created = await userRepo.create({
           id: crypto.randomUUID(),
           email: profile.email,
           passwordHash: null,
           createdAt: now,
           updatedAt: now,
         })
-        await userRepo.assignRole(user.id, 'user')
+        // No assignRole — roles are per-service, granted via the management API.
+        await deps.socialRepo.link({
+          id: crypto.randomUUID(),
+          userId: created.id,
+          provider: 'google',
+          providerAccountId: profile.providerAccountId,
+        })
+        return issueTokensForService(created.id, audience)
       }
+
+      if (user.passwordHash !== null) {
+        // Pre-hijacking guard: a local account with a password must prove
+        // ownership via password login before linking a social provider.
+        throw AppError.forbidden(
+          'an account with this email already exists; sign in with your password to link Google',
+        )
+      }
+
+      // Passwordless user (e.g., invite-created): safe to link.
       await deps.socialRepo.link({
         id: crypto.randomUUID(),
         userId: user.id,
         provider: 'google',
         providerAccountId: profile.providerAccountId,
       })
-      return issueTokens(user.id)
+      return issueTokensForService(user.id, audience)
     },
     async resolveUser(userId: string) {
       const user = await userRepo.findWithAccessById(userId)

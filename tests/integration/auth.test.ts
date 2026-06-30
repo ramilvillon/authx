@@ -1,5 +1,10 @@
 import { assert, assertEquals } from '@std/assert'
-import { authHeader, keySet, makeTestApp } from '../helpers.ts'
+import {
+  authHeader,
+  keySet,
+  makeTestApp,
+  seedDefaultService,
+} from '../helpers.ts'
 import { signAccessToken } from '../../src/lib/jwt.ts'
 import { generateRsaKeyPairPem } from '../../src/lib/keys.ts'
 
@@ -7,26 +12,34 @@ import { generateRsaKeyPairPem } from '../../src/lib/keys.ts'
 const { privateKeyPem: wrongPrivateKeyPem } = await generateRsaKeyPairPem()
 
 async function register(app: ReturnType<typeof makeTestApp>['app']) {
-  await app.request('/users', {
+  const res = await app.request('/users', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'a@b.com', password: 'pw123456' }),
   })
+  return (await res.json()).id as string
 }
 
 Deno.test('password grant then /users/me', async () => {
-  const { app } = makeTestApp()
-  await register(app)
-  const { Authorization } = await authHeader(app, 'a@b.com', 'pw123456')
+  const { app, orgRepo } = makeTestApp()
+  const userId = await register(app)
+  const audience = await seedDefaultService(orgRepo, userId)
+  const { Authorization } = await authHeader(
+    app,
+    'a@b.com',
+    'pw123456',
+    audience,
+  )
   const res = await app.request('/users/me', { headers: { Authorization } })
   assertEquals(res.status, 200)
   assertEquals((await res.json()).email, 'a@b.com')
 })
 
 Deno.test('refresh rotation + revoke', async () => {
-  const { app } = makeTestApp()
-  await register(app)
-  const { refresh } = await authHeader(app, 'a@b.com', 'pw123456')
+  const { app, orgRepo } = makeTestApp()
+  const userId = await register(app)
+  const audience = await seedDefaultService(orgRepo, userId)
+  const { refresh } = await authHeader(app, 'a@b.com', 'pw123456', audience)
 
   const refreshed = await app.request('/oauth/token', {
     method: 'POST',
@@ -66,9 +79,15 @@ Deno.test('/users/me without token -> 401', async () => {
 })
 
 Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () => {
-  const { app } = makeTestApp()
-  await register(app)
-  const { Authorization } = await authHeader(app, 'a@b.com', 'pw123456')
+  const { app, orgRepo } = makeTestApp()
+  const userId = await register(app)
+  const audience = await seedDefaultService(orgRepo, userId)
+  const { Authorization } = await authHeader(
+    app,
+    'a@b.com',
+    'pw123456',
+    audience,
+  )
 
   // tampered: flip the first char of the signature.
   const valid = Authorization.slice('Bearer '.length)
@@ -90,6 +109,10 @@ Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () 
     privateKeyPem: wrongPrivateKeyPem,
     kid: 'wrong',
     ttlSeconds: 900,
+    aud: 'test-service',
+    org: 'o1',
+    scope: '',
+    clientId: 'cid',
   })
   assertEquals(
     (await app.request('/users/me', {
@@ -105,6 +128,10 @@ Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () 
     privateKeyPem: keySet.privateKeyPem,
     kid: keySet.kid,
     ttlSeconds: -1,
+    aud: 'test-service',
+    org: 'o1',
+    scope: '',
+    clientId: 'cid',
   })
   assertEquals(
     (await app.request('/users/me', {
