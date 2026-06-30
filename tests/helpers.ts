@@ -8,7 +8,6 @@ import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repositor
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { createAdminService } from '../src/modules/admin/admin.service.ts'
-import { ROLE_GRANTS } from '../src/db/rbac-constants.ts'
 import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
 import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
 import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
@@ -39,7 +38,7 @@ export type TestContext = {
 
 export function makeTestDeps(): TestContext {
   const config = loadConfig(testEnv)
-  const userRepo = createInMemoryUserRepository(ROLE_GRANTS)
+  const userRepo = createInMemoryUserRepository()
   const tokenRepo = createInMemoryRefreshTokenRepository()
   const orgRepo = createInMemoryOrgRepository()
   const rbacRepo = createInMemoryRbacRepository()
