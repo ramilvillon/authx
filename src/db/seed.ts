@@ -4,6 +4,9 @@ import { createDb } from './client.ts'
 import { permissions, rolePermissions, roles } from './schema.ts'
 import { PERMISSIONS, ROLE_GRANTS } from './rbac-constants.ts'
 
+// ponytail: placeholder until a real system app_service row exists (task 4+)
+const SEED_APP_SERVICE_ID = '00000000-0000-0000-0000-000000000000'
+
 // Idempotent: find-or-insert each row so re-running is safe.
 async function seed() {
   const config = loadConfig(Deno.env.toObject())
@@ -14,7 +17,11 @@ async function seed() {
       where: eq(permissions.key, key),
     })
     if (!existing) {
-      await db.insert(permissions).values({ id: crypto.randomUUID(), key })
+      await db.insert(permissions).values({
+        id: crypto.randomUUID(),
+        appServiceId: SEED_APP_SERVICE_ID,
+        key,
+      })
     }
   }
 
@@ -28,8 +35,12 @@ async function seed() {
     })
     if (!role) {
       const id = crypto.randomUUID()
-      await db.insert(roles).values({ id, name: roleName })
-      role = { id, name: roleName }
+      await db.insert(roles).values({
+        id,
+        appServiceId: SEED_APP_SERVICE_ID,
+        name: roleName,
+      })
+      role = { id, appServiceId: SEED_APP_SERVICE_ID, name: roleName }
     }
     for (const key of keys) {
       const permissionId = permByKey.get(key)!

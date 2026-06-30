@@ -7,6 +7,7 @@ Deno.test('store, find, rotate atomically', async () => {
   await repo.create({
     id: 't1',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h1',
     expiresAt: future,
   })
@@ -15,6 +16,7 @@ Deno.test('store, find, rotate atomically', async () => {
   const ok = await repo.rotate('t1', {
     id: 't2',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h2',
     expiresAt: future,
   })
@@ -30,12 +32,14 @@ Deno.test('rotating an already-revoked token loses the race (returns false)', as
   await repo.create({
     id: 't1',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h1',
     expiresAt: future,
   })
   await repo.rotate('t1', {
     id: 't2',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h2',
     expiresAt: future,
   })
@@ -43,6 +47,7 @@ Deno.test('rotating an already-revoked token loses the race (returns false)', as
   const second = await repo.rotate('t1', {
     id: 't3',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h3',
     expiresAt: future,
   })
@@ -55,12 +60,14 @@ Deno.test('revokeAllForUser revokes every token for the user', async () => {
   await repo.create({
     id: 't1',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h1',
     expiresAt: future,
   })
   await repo.create({
     id: 't2',
     userId: 'u1',
+    appServiceId: 'svc1',
     tokenHash: 'h2',
     expiresAt: future,
   })

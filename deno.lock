@@ -9,6 +9,7 @@
     "npm:@hono/zod-validator@~0.4.1": "0.4.3_hono@4.12.25_zod@3.25.76",
     "npm:@scalar/hono-api-reference@~0.5.165": "0.5.184_hono@4.12.25",
     "npm:bcryptjs@^2.4.3": "2.4.3",
+    "npm:drizzle-kit@*": "0.31.10",
     "npm:drizzle-kit@~0.31.10": "0.31.10",
     "npm:drizzle-orm@~0.45.2": "0.45.2_mysql2@3.22.5__@types+node@25.9.3",
     "npm:hono-openapi@~0.4.2": "0.4.8_@hono+zod-validator@0.4.3__hono@4.12.25__zod@3.25.76_hono@4.12.25_openapi-types@12.1.3_zod@3.25.76_zod-openapi@4.2.4__zod@3.25.76",

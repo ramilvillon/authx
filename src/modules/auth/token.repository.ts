@@ -1,6 +1,7 @@
 export type RefreshTokenRecord = {
   id: string
   userId: string
+  appServiceId: string
   tokenHash: string
   expiresAt: Date
   revokedAt?: Date | null
@@ -9,7 +10,7 @@ export type RefreshTokenRecord = {
 
 export type NewRefreshToken = Pick<
   RefreshTokenRecord,
-  'id' | 'userId' | 'tokenHash' | 'expiresAt'
+  'id' | 'userId' | 'appServiceId' | 'tokenHash' | 'expiresAt'
 >
 
 export type RefreshTokenRepository = {
