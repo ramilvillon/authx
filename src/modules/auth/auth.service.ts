@@ -33,7 +33,11 @@ export function createAuthService(deps: {
     return dummyHash
   }
 
-  async function issueTokens(userId: string): Promise<TokenPair> {
+  // ponytail: appServiceId placeholder until auth routes carry service context (task 4+)
+  async function issueTokens(
+    userId: string,
+    appServiceId = '',
+  ): Promise<TokenPair> {
     const access_token = await signAccessToken({
       sub: userId,
       issuer: config.issuer,
@@ -45,6 +49,7 @@ export function createAuthService(deps: {
     const record: NewRefreshToken = {
       id: crypto.randomUUID(),
       userId,
+      appServiceId,
       tokenHash: await hashToken(refresh),
       expiresAt: new Date(Date.now() + config.refreshTokenTtl * 1000),
     }
@@ -87,6 +92,7 @@ export function createAuthService(deps: {
       const next: NewRefreshToken = {
         id: crypto.randomUUID(),
         userId: existing.userId,
+        appServiceId: existing.appServiceId,
         tokenHash: await hashToken(refresh),
         expiresAt: new Date(Date.now() + config.refreshTokenTtl * 1000),
       }

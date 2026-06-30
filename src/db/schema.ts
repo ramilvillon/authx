@@ -1,7 +1,9 @@
 import {
   datetime,
+  index,
   mysqlTable,
   primaryKey,
+  text,
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core'
@@ -17,6 +19,7 @@ export const users = mysqlTable('users', {
 export const refreshTokens = mysqlTable('refresh_tokens', {
   id: varchar('id', { length: 36 }).primaryKey(),
   userId: varchar('user_id', { length: 36 }).notNull(),
+  appServiceId: varchar('app_service_id', { length: 36 }).notNull(),
   tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
   expiresAt: datetime('expires_at').notNull(),
   revokedAt: datetime('revoked_at'),
@@ -36,13 +39,15 @@ export const socialAccounts = mysqlTable('social_accounts', {
 
 export const roles = mysqlTable('roles', {
   id: varchar('id', { length: 36 }).primaryKey(),
-  name: varchar('name', { length: 64 }).notNull().unique(),
-})
+  appServiceId: varchar('app_service_id', { length: 36 }).notNull(),
+  name: varchar('name', { length: 64 }).notNull(),
+}, (t) => ({ serviceName: unique().on(t.appServiceId, t.name) }))
 
 export const permissions = mysqlTable('permissions', {
   id: varchar('id', { length: 36 }).primaryKey(),
-  key: varchar('key', { length: 64 }).notNull().unique(),
-})
+  appServiceId: varchar('app_service_id', { length: 36 }).notNull(),
+  key: varchar('key', { length: 64 }).notNull(),
+}, (t) => ({ serviceKey: unique().on(t.appServiceId, t.key) }))
 
 export const rolePermissions = mysqlTable('role_permissions', {
   roleId: varchar('role_id', { length: 36 }).notNull(),
@@ -53,3 +58,30 @@ export const userRoles = mysqlTable('user_roles', {
   userId: varchar('user_id', { length: 36 }).notNull(),
   roleId: varchar('role_id', { length: 36 }).notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.userId, t.roleId] }) }))
+
+export const organizations = mysqlTable('organizations', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  slug: varchar('slug', { length: 64 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
+  createdAt: datetime('created_at').notNull(),
+})
+
+export const appServices = mysqlTable('app_services', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  orgId: varchar('org_id', { length: 36 }).notNull(),
+  clientId: varchar('client_id', { length: 64 }).notNull().unique(),
+  clientSecretHash: varchar('client_secret_hash', { length: 255 }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 64 }).notNull(),
+  audience: varchar('audience', { length: 128 }).notNull().unique(),
+  type: varchar('type', { length: 16 }).notNull(), // 'public' | 'confidential'
+  redirectUris: text('redirect_uris').notNull().default('[]'), // JSON array
+  createdAt: datetime('created_at').notNull(),
+}, (t) => ({ orgIdx: index('app_services_org_idx').on(t.orgId) }))
+
+export const memberships = mysqlTable('memberships', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  orgId: varchar('org_id', { length: 36 }).notNull(),
+  createdAt: datetime('created_at').notNull(),
+}, (t) => ({ userOrg: unique().on(t.userId, t.orgId) }))
