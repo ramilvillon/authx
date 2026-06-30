@@ -1,0 +1,62 @@
+name: E2E
+
+on:
+  # Weekly, Mondays 04:42 UTC (offset from the audit cron). The e2e suite
+  # exercises the Drizzle repository against a real MySQL; a schedule catches
+  # environment drift (database image, driver) independent of code changes.
+  schedule:
+    - cron: '42 4 * * 1'
+  # Run on demand, e.g. after touching the schema, migrations, or db adapter.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e (mysql)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app
+          MYSQL_USER: app
+          MYSQL_PASSWORD: app
+        ports:
+          - 3306:3306
+        # Steps only start once MySQL answers as the app user, so migrations
+        # don't race the container's first-boot initialization.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uapp -papp"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.7.13
+          cache: true
+
+      # The db/test tasks read --env-file=.env; .env.example already sets
+      # DB_HOST/DB_PORT to localhost:3306, matching the service container above.
+      - name: Configure environment
+        run: cp .env.example .env
+
+      - name: Apply migrations
+        run: deno task db:migrate
+
+      - name: Seed RBAC roles + permissions
+        run: deno task db:seed
+
+      - name: Run e2e tests
+        run: deno task test:e2e

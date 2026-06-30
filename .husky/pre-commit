@@ -1,0 +1,4 @@
+gitleaks protect --staged --redact || exit 1
+deno fmt --check || exit 1
+deno lint || exit 1
+deno check src/ tests/ || exit 1
