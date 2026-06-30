@@ -7,11 +7,14 @@ import { createInMemoryOrgRepository } from '../src/modules/orgs/orgs.repository
 import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
+import { createAdminService } from '../src/modules/admin/admin.service.ts'
 import { ROLE_GRANTS } from '../src/db/rbac-constants.ts'
 import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
 import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
 import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
+import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { generateRsaKeyPairPem, loadKeySet } from '../src/lib/keys.ts'
+import { signAccessToken } from '../src/lib/jwt.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 export const keySet = await loadKeySet(privateKeyPem, publicKeyPem)
@@ -65,6 +68,7 @@ export function makeTestDeps(): TestContext {
       config,
       keySet,
     }),
+    adminService: createAdminService({ orgRepo, rbacRepo }),
   }
   return { deps, userRepo, socialRepo, orgRepo, rbacRepo }
 }
@@ -109,6 +113,36 @@ export async function seedDefaultService(
   return audience
 }
 
+// Grants permission keys to userId within the service behind `audience`
+// (creates a role + permissions, grants and assigns them) so the user's access
+// token for that audience carries them as scope.
+export async function grantPermissions(
+  orgRepo: OrgRepository,
+  rbacRepo: RbacRepository,
+  audience: string,
+  userId: string,
+  keys: string[],
+): Promise<void> {
+  const service = await orgRepo.findServiceByAudience(audience)
+  if (!service) throw new Error(`no service for audience ${audience}`)
+  const roleId = crypto.randomUUID()
+  await rbacRepo.createRole({
+    id: roleId,
+    appServiceId: service.id,
+    name: `role-${roleId}`,
+  })
+  for (const key of keys) {
+    const permId = crypto.randomUUID()
+    await rbacRepo.createPermission({
+      id: permId,
+      appServiceId: service.id,
+      key,
+    })
+    await rbacRepo.grantPermissionToRole(roleId, permId)
+  }
+  await rbacRepo.assignRoleToUser(userId, roleId)
+}
+
 export async function authHeader(
   app: ReturnType<typeof createApp>,
   email: string,
@@ -130,4 +164,32 @@ export async function authHeader(
     Authorization: `Bearer ${body.access_token}`,
     refresh: body.refresh_token as string,
   }
+}
+
+export const PLATFORM_PERMISSIONS = [
+  'orgs:read',
+  'orgs:write',
+  'services:read',
+  'services:write',
+  'members:write',
+  'rbac:write',
+]
+
+// Mints a platform-scoped access token directly: the token's scope IS the authz
+// for the management API, so no repo seeding is needed. Pass a narrower
+// permission list to exercise the missing-permission (403) path.
+export function seedPlatformAdmin(
+  permissions: string[] = PLATFORM_PERMISSIONS,
+): Promise<string> {
+  return signAccessToken({
+    sub: 'admin-user',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: 'platform',
+    org: 'platform',
+    scope: permissions.join(' '),
+    clientId: 'platform',
+  })
 }

@@ -207,15 +207,5 @@ export function createAuthService(deps: {
       })
       return issueTokensForService(user.id, audience)
     },
-    async resolveUser(userId: string) {
-      const user = await userRepo.findWithAccessById(userId)
-      if (!user) throw AppError.unauthorized('user not found')
-      return {
-        id: user.id,
-        email: user.email,
-        roles: user.roles,
-        permissions: user.permissions,
-      }
-    },
   }
 }
