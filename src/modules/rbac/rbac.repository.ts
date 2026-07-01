@@ -6,9 +6,14 @@ export type RbacRepository = {
   createPermission(p: PermissionRecord): Promise<PermissionRecord>
   grantPermissionToRole(roleId: string, permissionId: string): Promise<void>
   assignRoleToUser(userId: string, roleId: string): Promise<void>
+  assignRoleToClient(clientAppServiceId: string, roleId: string): Promise<void>
   findRoleById(id: string): Promise<RoleRecord | null>
   permissionsForUserInService(
     userId: string,
+    appServiceId: string,
+  ): Promise<string[]>
+  permissionsForClientInService(
+    clientAppServiceId: string,
     appServiceId: string,
   ): Promise<string[]>
 }
@@ -19,6 +24,7 @@ export function createInMemoryRbacRepository(): RbacRepository {
   const perms = new Map<string, PermissionRecord>()
   const rolePerms = new Set<string>() // `${roleId}:${permissionId}`
   const userRoleIds = new Map<string, Set<string>>() // userId -> roleIds
+  const clientRoleIds = new Map<string, Set<string>>() // clientAppServiceId -> roleIds
 
   return {
     createRole(r) {
@@ -45,6 +51,23 @@ export function createInMemoryRbacRepository(): RbacRepository {
     permissionsForUserInService(userId, appServiceId) {
       const out = new Set<string>()
       for (const roleId of userRoleIds.get(userId) ?? []) {
+        const role = roles.get(roleId)
+        if (!role || role.appServiceId !== appServiceId) continue
+        for (const p of perms.values()) {
+          if (rolePerms.has(`${roleId}:${p.id}`)) out.add(p.key)
+        }
+      }
+      return Promise.resolve([...out])
+    },
+    assignRoleToClient(clientAppServiceId, roleId) {
+      const set = clientRoleIds.get(clientAppServiceId) ?? new Set()
+      set.add(roleId)
+      clientRoleIds.set(clientAppServiceId, set)
+      return Promise.resolve()
+    },
+    permissionsForClientInService(clientAppServiceId, appServiceId) {
+      const out = new Set<string>()
+      for (const roleId of clientRoleIds.get(clientAppServiceId) ?? []) {
         const role = roles.get(roleId)
         if (!role || role.appServiceId !== appServiceId) continue
         for (const p of perms.values()) {

@@ -30,3 +30,25 @@ Deno.test('permissions are scoped to a service', async () => {
     'analytics:read',
   ])
 })
+
+Deno.test('client role grant -> permissionsForClientInService', async () => {
+  const repo = createInMemoryRbacRepository()
+  await repo.createRole({ id: 'r1', appServiceId: 'target', name: 'writer' })
+  await repo.createPermission({
+    id: 'p1',
+    appServiceId: 'target',
+    key: 'orders:write',
+  })
+  await repo.grantPermissionToRole('r1', 'p1')
+  await repo.assignRoleToClient('client-svc', 'r1')
+
+  assertEquals(
+    await repo.permissionsForClientInService('client-svc', 'target'),
+    ['orders:write'],
+  )
+  // role belongs to a different service -> no permissions leak
+  assertEquals(
+    await repo.permissionsForClientInService('client-svc', 'other'),
+    [],
+  )
+})

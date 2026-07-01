@@ -59,6 +59,12 @@ export const userRoles = mysqlTable('user_roles', {
   roleId: varchar('role_id', { length: 36 }).notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.userId, t.roleId] }) }))
 
+export const clientRoles = mysqlTable('client_roles', {
+  clientAppServiceId: varchar('client_app_service_id', { length: 36 })
+    .notNull(),
+  roleId: varchar('role_id', { length: 36 }).notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.clientAppServiceId, t.roleId] }) }))
+
 export const organizations = mysqlTable('organizations', {
   id: varchar('id', { length: 36 }).primaryKey(),
   slug: varchar('slug', { length: 64 }).notNull().unique(),
