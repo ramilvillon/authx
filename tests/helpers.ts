@@ -7,6 +7,8 @@ import { createInMemoryOrgRepository } from '../src/modules/orgs/orgs.repository
 import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { createInMemorySessionRepository } from '../src/modules/auth/session.repository.ts'
 import { createInMemoryAuthCodeRepository } from '../src/modules/auth/authcode.repository.ts'
+import { createInMemoryVerificationTokenRepository } from '../src/modules/verification/verification.repository.ts'
+import { createVerificationService } from '../src/modules/verification/verification.service.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { createAdminService } from '../src/modules/admin/admin.service.ts'
@@ -36,6 +38,7 @@ export type TestContext = {
   socialRepo: SocialAccountRepository
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
+  sentEmails: { to: string; link: string }[]
 }
 
 export function makeTestDeps(): TestContext {
@@ -46,6 +49,20 @@ export function makeTestDeps(): TestContext {
   const rbacRepo = createInMemoryRbacRepository()
   const sessionRepo = createInMemorySessionRepository()
   const authCodeRepo = createInMemoryAuthCodeRepository()
+  const verificationRepo = createInMemoryVerificationTokenRepository()
+  const sentEmails: { to: string; link: string }[] = []
+  const emailSender = {
+    sendVerificationEmail(to: string, link: string) {
+      sentEmails.push({ to, link })
+      return Promise.resolve()
+    },
+  }
+  const verificationService = createVerificationService({
+    verificationRepo,
+    userRepo,
+    emailSender,
+    config,
+  })
   const social = new Map<string, string>()
   const socialRepo: SocialAccountRepository = {
     findByProviderAccount: (p, id) =>
@@ -74,13 +91,14 @@ export function makeTestDeps(): TestContext {
       authCodeRepo,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
+    verificationService,
   }
-  return { deps, userRepo, socialRepo, orgRepo, rbacRepo }
+  return { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails }
 }
 
 export function makeTestApp() {
-  const { deps, userRepo, orgRepo, rbacRepo } = makeTestDeps()
-  return { app: createApp(deps), userRepo, orgRepo, rbacRepo }
+  const { deps, userRepo, orgRepo, rbacRepo, sentEmails } = makeTestDeps()
+  return { app: createApp(deps), userRepo, orgRepo, rbacRepo, sentEmails }
 }
 
 // Seeds a default org + service and adds userId as a member.
