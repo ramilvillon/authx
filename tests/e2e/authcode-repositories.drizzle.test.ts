@@ -44,6 +44,8 @@ Deno.test({
       codeChallenge: 'chal',
       codeChallengeMethod: 'S256',
       scope: '',
+      nonce: null,
+      authTime: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
     })
     assert(await repo.findByCodeHash(codeHash))

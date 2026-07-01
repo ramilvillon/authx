@@ -43,6 +43,13 @@
       "when": 1782886976853,
       "tag": "0005_empty_red_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782887673539,
+      "tag": "0006_cloudy_ronan",
+      "breakpoints": true
     }
   ]
 }

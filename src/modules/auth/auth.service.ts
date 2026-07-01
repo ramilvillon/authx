@@ -15,7 +15,8 @@ import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import type { SessionRepository } from './session.repository.ts'
 import type { AuthCodeRepository } from './authcode.repository.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
-import { signAccessToken } from '../../lib/jwt.ts'
+import { signAccessToken, signIdToken } from '../../lib/jwt.ts'
+import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
 import { verifyChallenge } from '../../lib/pkce.ts'
@@ -49,6 +50,7 @@ export function createAuthService(deps: {
   async function issueTokensForService(
     userId: string,
     audience: string,
+    oidcScope?: string,
   ): Promise<TokenPair> {
     const service = await orgRepo.findServiceByAudience(audience)
     if (!service) throw AppError.badRequest('unknown audience')
@@ -69,6 +71,7 @@ export function createAuthService(deps: {
       org: service.orgId,
       scope: scopes.join(' '),
       clientId: service.clientId,
+      oidcScope,
     })
     const refresh = generateRefreshToken()
     await tokenRepo.create({
@@ -238,6 +241,16 @@ export function createAuthService(deps: {
       )
       return session?.userId ?? null
     },
+    async resolveSession(
+      sessionToken: string,
+    ): Promise<{ userId: string; authTime: Date } | null> {
+      const session = await sessionRepo.findActiveByTokenHash(
+        await hashToken(sessionToken),
+      )
+      return session
+        ? { userId: session.userId, authTime: session.createdAt }
+        : null
+    },
     async issueAuthorizationCode(
       userId: string,
       service: AppServiceRecord,
@@ -246,6 +259,8 @@ export function createAuthService(deps: {
         scope: string
         codeChallenge: string
         codeChallengeMethod: string
+        nonce?: string
+        authTime: Date
       },
     ): Promise<string> {
       // ponytail: guard here (the only writer) so the DB never holds a non-S256 record.
@@ -262,6 +277,8 @@ export function createAuthService(deps: {
         codeChallenge: p.codeChallenge,
         codeChallengeMethod: p.codeChallengeMethod,
         scope: p.scope,
+        nonce: p.nonce ?? null,
+        authTime: p.authTime,
         expiresAt: new Date(Date.now() + config.authCodeTtl * 1000),
       })
       return code
@@ -330,7 +347,27 @@ export function createAuthService(deps: {
         await tokenRepo.revokeAllForUser(record.userId)
         throw AppError.badRequest('invalid_grant')
       }
-      return issueTokensForService(record.userId, service.audience)
+      const oidc = grantedOidcScopes(record.scope)
+      const pair = await issueTokensForService(
+        record.userId,
+        service.audience,
+        oidc.length ? oidc.join(' ') : undefined,
+      )
+      if (!oidc.includes('openid')) return pair
+      const user = await userRepo.findById(record.userId)
+      if (!user) return pair
+      const id_token = await signIdToken({
+        issuer: config.issuer,
+        privateKeyPem: keySet.privateKeyPem,
+        kid: keySet.kid,
+        ttlSeconds: config.accessTokenTtl,
+        sub: user.id,
+        aud: input.clientId,
+        authTime: record.authTime,
+        nonce: record.nonce,
+        claims: claimsForScopes(user, oidc),
+      })
+      return { ...pair, id_token }
     },
     async logout(sessionToken: string): Promise<void> {
       const session = await sessionRepo.findActiveByTokenHash(

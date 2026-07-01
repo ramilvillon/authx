@@ -7,6 +7,8 @@ export type AuthCodeRecord = {
   codeChallenge: string
   codeChallengeMethod: string
   scope: string
+  nonce: string | null
+  authTime: Date
   expiresAt: Date
   consumedAt?: Date | null
 }

@@ -117,6 +117,8 @@ export const authorizationCodes = mysqlTable('authorization_codes', {
   codeChallengeMethod: varchar('code_challenge_method', { length: 8 })
     .notNull(),
   scope: text('scope').notNull(),
+  nonce: varchar('nonce', { length: 255 }),
+  authTime: datetime('auth_time').notNull(),
   expiresAt: datetime('expires_at').notNull(),
   consumedAt: datetime('consumed_at'),
   createdAt: datetime('created_at').notNull(),

@@ -12,6 +12,7 @@ export type AccessClaims = AccessPayload & {
   org: string
   scope: string
   client_id: string
+  oidc_scope?: string
 }
 
 export async function signAccessToken(
@@ -25,6 +26,7 @@ export async function signAccessToken(
     org: string
     scope: string
     clientId: string
+    oidcScope?: string
   },
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -35,12 +37,39 @@ export async function signAccessToken(
     org: opts.org,
     scope: opts.scope,
     client_id: opts.clientId,
+    ...(opts.oidcScope ? { oidc_scope: opts.oidcScope } : {}),
     iat: now,
     exp: now + opts.ttlSeconds,
   }
   // Sign with a JWK carrying alg+kid so the `kid` lands in the JWT header.
   // ponytail: converts PEM→JWK per call; precompute on the key ring if signing
   // throughput ever matters.
+  const signingJwk = await privatePemToSigningJwk(opts.privateKeyPem, opts.kid)
+  return await sign(payload, signingJwk, 'RS256')
+}
+
+export async function signIdToken(opts: {
+  issuer: string
+  privateKeyPem: string
+  kid: string
+  ttlSeconds: number
+  sub: string
+  aud: string
+  authTime: Date
+  nonce?: string | null
+  claims: Record<string, unknown>
+}): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const payload = {
+    iss: opts.issuer,
+    sub: opts.sub,
+    aud: opts.aud,
+    iat: now,
+    exp: now + opts.ttlSeconds,
+    auth_time: Math.floor(opts.authTime.getTime() / 1000),
+    ...(opts.nonce ? { nonce: opts.nonce } : {}),
+    ...opts.claims,
+  }
   const signingJwk = await privatePemToSigningJwk(opts.privateKeyPem, opts.kid)
   return await sign(payload, signingJwk, 'RS256')
 }

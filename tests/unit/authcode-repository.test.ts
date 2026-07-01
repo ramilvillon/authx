@@ -11,6 +11,8 @@ function newCode(id: string) {
     codeChallenge: 'chal',
     codeChallengeMethod: 'S256',
     scope: 'a b',
+    nonce: null,
+    authTime: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
   }
 }
