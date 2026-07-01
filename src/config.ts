@@ -11,6 +11,26 @@ const schema = z.object({
   JWT_PRIVATE_KEY: z.string().min(1),
   JWT_PUBLIC_KEY: z.string().min(1),
   JWT_ISSUER: z.string().min(1),
+  JWT_PREVIOUS_PUBLIC_KEYS: z.string().default('[]').transform((v, ctx) => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(v)
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'JWT_PREVIOUS_PUBLIC_KEYS must be valid JSON',
+      })
+      return z.NEVER
+    }
+    if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === 'string')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'JWT_PREVIOUS_PUBLIC_KEYS must be a JSON array of PEM strings',
+      })
+      return z.NEVER
+    }
+    return parsed as string[]
+  }),
   ACCESS_TOKEN_TTL: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
   SSO_SESSION_TTL: z.coerce.number().default(2592000),
@@ -40,6 +60,7 @@ export type Config = {
   jwtPrivateKey: string
   jwtPublicKey: string
   issuer: string
+  jwtPreviousPublicKeys: string[]
   accessTokenTtl: number
   refreshTokenTtl: number
   ssoSessionTtl: number
@@ -70,6 +91,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     jwtPrivateKey: e.JWT_PRIVATE_KEY,
     jwtPublicKey: e.JWT_PUBLIC_KEY,
     issuer: e.JWT_ISSUER,
+    jwtPreviousPublicKeys: e.JWT_PREVIOUS_PUBLIC_KEYS,
     accessTokenTtl: e.ACCESS_TOKEN_TTL,
     refreshTokenTtl: e.REFRESH_TOKEN_TTL,
     ssoSessionTtl: e.SSO_SESSION_TTL,

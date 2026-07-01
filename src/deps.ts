@@ -22,7 +22,7 @@ import {
   type AdminService,
   createAdminService,
 } from './modules/admin/admin.service.ts'
-import { type KeySet, loadKeySet } from './lib/keys.ts'
+import { type KeySet, loadKeyRing } from './lib/keys.ts'
 
 export type Deps = {
   config: Config
@@ -41,7 +41,11 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const rbacRepo = createDrizzleRbacRepository(db)
   const sessionRepo = createDrizzleSessionRepository(db)
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
-  const keySet = await loadKeySet(config.jwtPrivateKey, config.jwtPublicKey)
+  const keySet = await loadKeyRing(
+    config.jwtPrivateKey,
+    config.jwtPublicKey,
+    config.jwtPreviousPublicKeys,
+  )
   return {
     config,
     keySet,

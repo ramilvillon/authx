@@ -9,9 +9,14 @@ const wellknown = new Hono<AppEnv>()
       issuer: iss,
       jwks_uri: `${iss}/.well-known/jwks.json`,
       token_endpoint: `${iss}/oauth/token`,
-      authorization_endpoint: `${iss}/authorize`,
+      authorization_endpoint: `${iss}/oauth/authorize`,
       id_token_signing_alg_values_supported: ['RS256'],
-      grant_types_supported: ['password', 'refresh_token'],
+      grant_types_supported: [
+        'password',
+        'refresh_token',
+        'authorization_code',
+        'client_credentials',
+      ],
     })
   })
 

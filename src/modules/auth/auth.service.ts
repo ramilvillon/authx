@@ -5,7 +5,7 @@ import type {
   RefreshTokenRepository,
 } from './token.repository.ts'
 import type { SocialAccountRepository } from './social.repository.ts'
-import type { TokenPair } from './auth.schema.ts'
+import type { ClientCredentialsResponse, TokenPair } from './auth.schema.ts'
 import type { KeySet } from '../../lib/keys.ts'
 import type {
   AppServiceRecord,
@@ -337,6 +337,43 @@ export function createAuthService(deps: {
         await hashToken(sessionToken),
       )
       if (session) await sessionRepo.revoke(session.id)
+    },
+    async clientCredentialsGrant(
+      clientId: string,
+      clientSecret: string,
+      audience: string,
+    ): Promise<ClientCredentialsResponse> {
+      const requesting = await orgRepo.findServiceByClientId(clientId)
+      if (
+        !requesting || requesting.type !== 'confidential' ||
+        requesting.clientSecretHash === null ||
+        (await hashToken(clientSecret)) !== requesting.clientSecretHash
+      ) {
+        throw AppError.unauthorized('invalid_client')
+      }
+      const target = await orgRepo.findServiceByAudience(audience)
+      if (!target) throw AppError.badRequest('invalid_request')
+
+      const scopes = await rbacRepo.permissionsForClientInService(
+        requesting.id,
+        target.id,
+      )
+      const access_token = await signAccessToken({
+        sub: requesting.id,
+        issuer: config.issuer,
+        privateKeyPem: keySet.privateKeyPem,
+        kid: keySet.kid,
+        ttlSeconds: config.accessTokenTtl,
+        aud: target.audience,
+        org: target.orgId,
+        scope: scopes.join(' '),
+        clientId: requesting.clientId,
+      })
+      return {
+        access_token,
+        token_type: 'Bearer',
+        expires_in: config.accessTokenTtl,
+      }
     },
   }
 }

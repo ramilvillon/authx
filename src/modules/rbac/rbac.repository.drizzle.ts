@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import {
+  clientRoles,
   permissions,
   rolePermissions,
   roles,
@@ -37,6 +38,31 @@ export function createDrizzleRbacRepository(db: Database): RbacRepository {
         .where(
           and(
             eq(userRoles.userId, userId),
+            eq(roles.appServiceId, appServiceId),
+          ),
+        )
+      const roleIds = roleRows.map((r) => r.id)
+      if (!roleIds.length) return []
+      const permRows = await db.select({ key: permissions.key })
+        .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          eq(rolePermissions.permissionId, permissions.id),
+        )
+        .where(inArray(rolePermissions.roleId, roleIds))
+      return [...new Set(permRows.map((p) => p.key))]
+    },
+    async assignRoleToClient(clientAppServiceId, roleId) {
+      await db.insert(clientRoles).values({ clientAppServiceId, roleId })
+        .onDuplicateKeyUpdate({ set: { clientAppServiceId } })
+    },
+    async permissionsForClientInService(clientAppServiceId, appServiceId) {
+      const roleRows = await db.select({ id: roles.id })
+        .from(clientRoles)
+        .innerJoin(roles, eq(clientRoles.roleId, roles.id))
+        .where(
+          and(
+            eq(clientRoles.clientAppServiceId, clientAppServiceId),
             eq(roles.appServiceId, appServiceId),
           ),
         )

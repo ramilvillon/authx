@@ -95,5 +95,7 @@ export function createAdminService(deps: {
       rbacRepo.grantPermissionToRole(roleId, permissionId),
     assignRole: (userId: string, roleId: string) =>
       rbacRepo.assignRoleToUser(userId, roleId),
+    assignRoleToClient: (clientAppServiceId: string, roleId: string) =>
+      rbacRepo.assignRoleToClient(clientAppServiceId, roleId),
   }
 }

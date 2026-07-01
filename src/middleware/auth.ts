@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv } from '../deps.ts'
-import { verifyAccessToken } from '../lib/jwt.ts'
+import { verifyWithKeyRing } from '../lib/jwt.ts'
 import { AppError } from '../lib/errors.ts'
 
 export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
@@ -11,7 +11,7 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const token = header.slice('Bearer '.length)
   let claims
   try {
-    claims = await verifyAccessToken(token, c.var.keySet.publicKeyPem)
+    claims = await verifyWithKeyRing(token, c.var.keySet)
   } catch {
     throw AppError.unauthorized('invalid token')
   }

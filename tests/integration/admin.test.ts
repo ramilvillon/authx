@@ -96,6 +96,80 @@ Deno.test('register confidential service returns a one-time client secret', asyn
   assert(typeof body.clientSecret === 'string' && body.clientSecret.length > 0)
 })
 
+Deno.test('POST /clients/:id/roles grants a client a role -> M2M token carries it', async () => {
+  const { app, orgRepo, rbacRepo } = makeTestApp()
+  const token = await seedPlatformAdmin()
+  const now = new Date()
+  const org = await orgRepo.createOrg({
+    id: crypto.randomUUID(),
+    slug: 'acme',
+    name: 'Acme',
+    createdAt: now,
+  })
+  const { hashToken } = await import('../../src/lib/tokens.ts')
+  const client = await orgRepo.createService({
+    id: crypto.randomUUID(),
+    orgId: org.id,
+    clientId: 'cid_client',
+    clientSecretHash: await hashToken('s3cret'),
+    name: 'Caller',
+    slug: 'caller',
+    audience: 'caller-aud',
+    type: 'confidential',
+    redirectUris: [],
+    createdAt: now,
+  })
+  const target = await orgRepo.createService({
+    id: crypto.randomUUID(),
+    orgId: org.id,
+    clientId: 'cid_target',
+    clientSecretHash: null,
+    name: 'Target',
+    slug: 'target',
+    audience: 'target-aud',
+    type: 'public',
+    redirectUris: [],
+    createdAt: now,
+  })
+  const role = await rbacRepo.createRole({
+    id: crypto.randomUUID(),
+    appServiceId: target.id,
+    name: 'writer',
+  })
+  const perm = await rbacRepo.createPermission({
+    id: crypto.randomUUID(),
+    appServiceId: target.id,
+    key: 'orders:write',
+  })
+  await rbacRepo.grantPermissionToRole(role.id, perm.id)
+
+  const grant = await app.request(`/clients/${client.id}/roles`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ roleId: role.id }),
+  })
+  assertEquals(grant.status, 204)
+
+  const tok = await app.request('/oauth/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'client_credentials',
+      client_id: 'cid_client',
+      client_secret: 's3cret',
+      audience: 'target-aud',
+    }),
+  })
+  const body = await tok.json()
+  const { verifyAccessToken } = await import('../../src/lib/jwt.ts')
+  const { keySet } = await import('../helpers.ts')
+  const claims = await verifyAccessToken(body.access_token, keySet.publicKeyPem)
+  assertEquals(claims.scope, 'orders:write')
+})
+
 Deno.test('end-to-end: grant a role and see it in the token scope', async () => {
   const ctx = makeTestApp()
   const token = await seedPlatformAdmin()

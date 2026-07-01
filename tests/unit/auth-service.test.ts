@@ -10,10 +10,10 @@ import { createUserService } from '../../src/modules/users/users.service.ts'
 import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import type { SocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
 import { loadConfig } from '../../src/config.ts'
-import { generateRsaKeyPairPem, loadKeySet } from '../../src/lib/keys.ts'
+import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
-const keySet = await loadKeySet(privateKeyPem, publicKeyPem)
+const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
 
 function setup() {
   const config = loadConfig({
