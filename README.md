@@ -16,6 +16,9 @@ dependency-free so the `hc` RPC client keeps full type inference.
   carrying exactly that service's permissions for the user
 - **Multi-org + management API** — orgs, app services, members, and per-service
   RBAC managed via the management API, gated by the reserved `platform` audience
+- **SSO (Authorization Code + PKCE)** — `GET/POST /oauth/authorize` with a
+  server-side session; `grant_type=authorization_code` on `/oauth/token`
+  exchanges a one-time PKCE-protected code for audience-scoped tokens
 - **Google social login** — verified-email requirement (`/oauth/google`)
 - **RBAC** — roles + permissions with ownership checks (self-or-permission)
 - **Pluggable rate limiting** — in-memory store, stricter throttle on auth
@@ -74,6 +77,8 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; password for the bootstrap admin                         |
 | `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                    |
 | `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                   |
+| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                     |
+| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                              |
 | `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                             |
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                         |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                               |
@@ -94,22 +99,25 @@ are rejected.
 
 ## API endpoints
 
-| Method   | Path                                | Auth                               | Description                               |
-| -------- | ----------------------------------- | ---------------------------------- | ----------------------------------------- |
-| `GET`    | `/health`                           | —                                  | Liveness check                            |
-| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)        |
-| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                |
-| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                |
-| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                |
-| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                             |
-| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                             |
-| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password or refresh grant          |
-| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                    |
-| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback) |
-| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                 |
-| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                   |
-| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                     |
-| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                   |
+| Method   | Path                                | Auth                               | Description                                  |
+| -------- | ----------------------------------- | ---------------------------------- | -------------------------------------------- |
+| `GET`    | `/health`                           | —                                  | Liveness check                               |
+| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)           |
+| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                   |
+| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                   |
+| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                   |
+| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                                |
+| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                |
+| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password or refresh grant             |
+| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                       |
+| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)    |
+| `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`    |
+| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code` |
+| `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                       |
+| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                    |
+| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                      |
+| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                        |
+| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                      |
 
 `POST /oauth/token` accepts an optional `audience` (a service's `audience`
 string); the returned access token then carries exactly the permissions that
@@ -150,6 +158,26 @@ curl -X POST localhost:3000/oauth/token \
 # call a protected route
 curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
 ```
+
+### Authorization Code + PKCE (SSO)
+
+1. Client generates a `code_verifier` and
+   `code_challenge = base64url(sha256(verifier))`.
+2. Browser hits
+   `GET /oauth/authorize?client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…`.
+3. No session → login form; on success the server sets an SSO session cookie and
+   `302`s back to `redirect_uri?code=…&state=…`. An existing session skips the
+   form.
+4. Client exchanges the code:
+
+```bash
+curl -X POST localhost:3000/oauth/token \
+  -H 'content-type: application/json' \
+  -d '{"grant_type":"authorization_code","code":"<code>","redirect_uri":"<uri>","code_verifier":"<verifier>","client_id":"<client_id>"}'
+```
+
+Confidential clients also send `"client_secret":"…"`. Only PKCE `S256` is
+supported.
 
 ## Type-safe RPC client
 
