@@ -123,3 +123,13 @@ export const authorizationCodes = mysqlTable('authorization_codes', {
   consumedAt: datetime('consumed_at'),
   createdAt: datetime('created_at').notNull(),
 })
+
+export const emailVerificationTokens = mysqlTable('email_verification_tokens', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  email: varchar('email', { length: 255 }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: datetime('expires_at').notNull(),
+  consumedAt: datetime('consumed_at'),
+  createdAt: datetime('created_at').notNull(),
+})

@@ -35,6 +35,7 @@ const schema = z.object({
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
   SSO_SESSION_TTL: z.coerce.number().default(2592000),
   AUTH_CODE_TTL: z.coerce.number().default(60),
+  EMAIL_VERIFICATION_TTL: z.coerce.number().default(86400),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -65,6 +66,7 @@ export type Config = {
   refreshTokenTtl: number
   ssoSessionTtl: number
   authCodeTtl: number
+  emailVerificationTtl: number
   google: { clientId: string; clientSecret: string; redirectUri: string }
   rateLimit: { windowMs: number; max: number }
   trustProxy: boolean
@@ -96,6 +98,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     refreshTokenTtl: e.REFRESH_TOKEN_TTL,
     ssoSessionTtl: e.SSO_SESSION_TTL,
     authCodeTtl: e.AUTH_CODE_TTL,
+    emailVerificationTtl: e.EMAIL_VERIFICATION_TTL,
     google: {
       clientId: e.GOOGLE_CLIENT_ID,
       clientSecret: e.GOOGLE_CLIENT_SECRET,
