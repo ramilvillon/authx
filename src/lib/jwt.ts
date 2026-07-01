@@ -1,6 +1,5 @@
 import { decode, sign, verify } from 'hono/jwt'
-import type { KeySet } from './keys.ts'
-import { privatePemToSigningJwk } from './keys.ts'
+import { type KeySet, privatePemToSigningJwk } from './keys.ts'
 
 export type AccessPayload = {
   iss: string

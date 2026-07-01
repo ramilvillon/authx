@@ -1,4 +1,5 @@
 import { assertEquals } from '@std/assert'
+import { sign } from 'hono/jwt'
 import {
   decode,
   signAccessToken,
@@ -101,4 +102,30 @@ Deno.test('verifyWithKeyRing verifies by kid, falls back to active, rejects unkn
     threw = true
   }
   assertEquals(threw, true)
+})
+
+Deno.test('verifyWithKeyRing falls back to the active key for a kid-less token', async () => {
+  const a = await generateRsaKeyPairPem()
+  const ring = await loadKeyRing(a.privateKeyPem, a.publicKeyPem)
+  // Sign with the raw PEM (not a JWK) so hono/jwt emits NO kid header — exactly
+  // what a pre-rotation token looks like.
+  const now = Math.floor(Date.now() / 1000)
+  const legacy = await sign(
+    {
+      sub: 'legacy',
+      iss: 'http://t',
+      aud: 'a',
+      org: 'o',
+      scope: '',
+      client_id: 'c',
+      iat: now,
+      exp: now + 60,
+    },
+    a.privateKeyPem,
+    'RS256',
+  )
+  const { header } = decode(legacy) as { header: { kid?: string } }
+  assertEquals(header.kid, undefined)
+  const claims = await verifyWithKeyRing(legacy, ring)
+  assertEquals(claims.sub, 'legacy')
 })
