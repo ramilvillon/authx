@@ -17,6 +17,7 @@ import auth from './modules/auth/auth.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
 import admin from './modules/admin/admin.routes.ts'
 import userinfo from './modules/oidc/userinfo.routes.ts'
+import verification from './modules/verification/verification.routes.ts'
 
 export function createApp(deps: Deps) {
   const logger = createLogger(deps.config)
@@ -50,12 +51,17 @@ export function createApp(deps: Deps) {
       '/oauth/authorize',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
+    .use(
+      '/verify-email/resend',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
     .get('/health', (c) => c.json({ status: 'ok' }))
     .route('/users', users)
     .route('/oauth', auth)
     .route('/oauth', userinfo)
     .route('/.well-known', wellknown)
     .route('/', admin)
+    .route('/', verification)
 
   // Registered after the routes so the spec can introspect every mounted path.
   app.get(

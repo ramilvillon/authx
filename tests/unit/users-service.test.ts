@@ -53,3 +53,19 @@ Deno.test('updateUserSchema strips email_verified (not client-settable)', () => 
   const parsed = updateUserSchema.parse({ name: 'X', email_verified: true })
   assertEquals('email_verified' in parsed, false)
 })
+
+Deno.test('changing email resets emailVerified to false', async () => {
+  const repo = createInMemoryUserRepository()
+  const svc = createUserService({ repo })
+  const now = new Date()
+  await repo.create({
+    id: 'u1',
+    email: 'a@b.com',
+    passwordHash: 'h',
+    emailVerified: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await svc.update('u1', { email: 'new@b.com' })
+  assertEquals((await repo.findById('u1'))?.emailVerified, false)
+})
