@@ -40,3 +40,27 @@ Deno.test('org + service + membership round-trips', async () => {
   await repo.removeMember('u1', 'o1')
   assert(!(await repo.isMember('u1', 'o1')))
 })
+
+Deno.test('findServiceByClientId resolves the service', async () => {
+  const repo = createInMemoryOrgRepository()
+  await repo.createOrg({
+    id: 'o9',
+    slug: 'o9',
+    name: 'O9',
+    createdAt: new Date(),
+  })
+  await repo.createService({
+    id: 's9',
+    orgId: 'o9',
+    clientId: 'cid_9',
+    clientSecretHash: null,
+    name: 'S9',
+    slug: 's9',
+    audience: 'aud9',
+    type: 'public',
+    redirectUris: ['https://app.example/cb'],
+    createdAt: new Date(),
+  })
+  assertEquals((await repo.findServiceByClientId('cid_9'))?.id, 's9')
+  assertEquals(await repo.findServiceByClientId('missing'), null)
+})

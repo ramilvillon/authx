@@ -44,3 +44,15 @@ Deno.test('loadConfig throws on missing required value', () => {
   const { JWT_PRIVATE_KEY: _omit, ...partial } = base
   assertThrows(() => loadConfig(partial), Error, 'JWT_PRIVATE_KEY')
 })
+
+Deno.test('loadConfig defaults SSO + auth-code TTLs', () => {
+  const cfg = loadConfig({
+    DB_USER: 'app',
+    DB_NAME: 'app',
+    JWT_PRIVATE_KEY: 'x',
+    JWT_PUBLIC_KEY: 'y',
+    JWT_ISSUER: 'http://t',
+  })
+  assertEquals(cfg.ssoSessionTtl, 2592000)
+  assertEquals(cfg.authCodeTtl, 60)
+})

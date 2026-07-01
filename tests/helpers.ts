@@ -5,6 +5,8 @@ import { createInMemoryUserRepository } from '../src/modules/users/users.reposit
 import { createInMemoryRefreshTokenRepository } from '../src/modules/auth/token.repository.ts'
 import { createInMemoryOrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repository.ts'
+import { createInMemorySessionRepository } from '../src/modules/auth/session.repository.ts'
+import { createInMemoryAuthCodeRepository } from '../src/modules/auth/authcode.repository.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { createAdminService } from '../src/modules/admin/admin.service.ts'
@@ -42,6 +44,8 @@ export function makeTestDeps(): TestContext {
   const tokenRepo = createInMemoryRefreshTokenRepository()
   const orgRepo = createInMemoryOrgRepository()
   const rbacRepo = createInMemoryRbacRepository()
+  const sessionRepo = createInMemorySessionRepository()
+  const authCodeRepo = createInMemoryAuthCodeRepository()
   const social = new Map<string, string>()
   const socialRepo: SocialAccountRepository = {
     findByProviderAccount: (p, id) =>
@@ -66,6 +70,8 @@ export function makeTestDeps(): TestContext {
       rbacRepo,
       config,
       keySet,
+      sessionRepo,
+      authCodeRepo,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
   }
