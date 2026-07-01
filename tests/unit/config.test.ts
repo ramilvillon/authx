@@ -56,3 +56,19 @@ Deno.test('loadConfig defaults SSO + auth-code TTLs', () => {
   assertEquals(cfg.ssoSessionTtl, 2592000)
   assertEquals(cfg.authCodeTtl, 60)
 })
+
+Deno.test('loadConfig parses JWT_PREVIOUS_PUBLIC_KEYS (defaults to [])', () => {
+  const base = {
+    DB_USER: 'app',
+    DB_NAME: 'app',
+    JWT_PRIVATE_KEY: 'x',
+    JWT_PUBLIC_KEY: 'y',
+    JWT_ISSUER: 'http://t',
+  }
+  assertEquals(loadConfig(base).jwtPreviousPublicKeys, [])
+  assertEquals(
+    loadConfig({ ...base, JWT_PREVIOUS_PUBLIC_KEYS: '["pemA","pemB"]' })
+      .jwtPreviousPublicKeys,
+    ['pemA', 'pemB'],
+  )
+})

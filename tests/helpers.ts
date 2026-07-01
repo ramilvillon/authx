@@ -14,11 +14,11 @@ import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
 import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
 import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
-import { generateRsaKeyPairPem, loadKeySet } from '../src/lib/keys.ts'
+import { generateRsaKeyPairPem, loadKeyRing } from '../src/lib/keys.ts'
 import { signAccessToken } from '../src/lib/jwt.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
-export const keySet = await loadKeySet(privateKeyPem, publicKeyPem)
+export const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
 
 const testEnv = {
   DB_USER: 'app',

@@ -103,11 +103,3 @@ export async function loadKeyRing(
     byKid,
   }
 }
-
-// Back-compat single-key loader; delegates to the ring. (Removed in Task 2.)
-export async function loadKeySet(
-  privateKeyPem: string,
-  publicKeyPem: string,
-): Promise<KeySet> {
-  return await loadKeyRing(privateKeyPem, publicKeyPem, [])
-}

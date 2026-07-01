@@ -1,11 +1,10 @@
 import { assertEquals, assertExists } from '@std/assert'
-import { generateRsaKeyPairPem, loadKeySet } from '../../src/lib/keys.ts'
+import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 import type { Jwk } from '../../src/lib/keys.ts'
-import { loadKeyRing } from '../../src/lib/keys.ts'
 
-Deno.test('loadKeySet builds a JWKS with a stable kid from the public key', async () => {
+Deno.test('loadKeyRing builds a JWKS with a stable kid from the public key', async () => {
   const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
-  const ks = await loadKeySet(privateKeyPem, publicKeyPem)
+  const ks = await loadKeyRing(privateKeyPem, publicKeyPem)
   assertEquals(ks.jwks.keys.length, 1)
   const jwk: Jwk = ks.jwks.keys[0]
   assertEquals(jwk.kty, 'RSA')
@@ -16,7 +15,7 @@ Deno.test('loadKeySet builds a JWKS with a stable kid from the public key', asyn
   // No private material leaks into the JWKS.
   assertEquals((jwk as unknown as Record<string, unknown>).d, undefined)
   // kid is deterministic for the same key.
-  const again = await loadKeySet(privateKeyPem, publicKeyPem)
+  const again = await loadKeyRing(privateKeyPem, publicKeyPem)
   assertEquals(again.kid, ks.kid)
 })
 
