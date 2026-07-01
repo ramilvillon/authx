@@ -66,5 +66,8 @@ export function createUserService(deps: { repo: UserRepository }) {
     async list(): Promise<PublicUser[]> {
       return (await repo.list()).map(toPublic)
     },
+    getUserRecord(id: string): Promise<UserRecord | null> {
+      return repo.findById(id)
+    },
   }
 }
