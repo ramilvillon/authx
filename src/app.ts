@@ -16,6 +16,7 @@ import users from './modules/users/users.routes.ts'
 import auth from './modules/auth/auth.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
 import admin from './modules/admin/admin.routes.ts'
+import userinfo from './modules/oidc/userinfo.routes.ts'
 
 export function createApp(deps: Deps) {
   const logger = createLogger(deps.config)
@@ -52,6 +53,7 @@ export function createApp(deps: Deps) {
     .get('/health', (c) => c.json({ status: 'ok' }))
     .route('/users', users)
     .route('/oauth', auth)
+    .route('/oauth', userinfo)
     .route('/.well-known', wellknown)
     .route('/', admin)
 

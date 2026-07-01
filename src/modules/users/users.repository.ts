@@ -4,6 +4,11 @@ export type UserRecord = {
   passwordHash: string | null
   createdAt: Date
   updatedAt: Date
+  emailVerified?: boolean
+  name?: string | null
+  givenName?: string | null
+  familyName?: string | null
+  picture?: string | null
 }
 
 export type UserWithAccess = UserRecord & {
@@ -18,7 +23,18 @@ export type UserRepository = {
   findWithAccessById(id: string): Promise<UserWithAccess | null>
   update(
     id: string,
-    patch: Partial<Pick<UserRecord, 'email' | 'passwordHash'>>,
+    patch: Partial<
+      Pick<
+        UserRecord,
+        | 'email'
+        | 'passwordHash'
+        | 'emailVerified'
+        | 'name'
+        | 'givenName'
+        | 'familyName'
+        | 'picture'
+      >
+    >,
   ): Promise<UserRecord | null>
   delete(id: string): Promise<boolean>
   list(): Promise<UserRecord[]>

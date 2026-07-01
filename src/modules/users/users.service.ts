@@ -37,11 +37,25 @@ export function createUserService(deps: { repo: UserRepository }) {
       return toPublic(u)
     },
     async update(id: string, input: UpdateUserInput): Promise<PublicUser> {
-      const patch: Partial<Pick<UserRecord, 'email' | 'passwordHash'>> = {}
+      const patch: Partial<
+        Pick<
+          UserRecord,
+          | 'email'
+          | 'passwordHash'
+          | 'name'
+          | 'givenName'
+          | 'familyName'
+          | 'picture'
+        >
+      > = {}
       if (input.email) patch.email = input.email
       if (input.password) {
         patch.passwordHash = await hashPassword(input.password)
       }
+      if (input.name !== undefined) patch.name = input.name
+      if (input.given_name !== undefined) patch.givenName = input.given_name
+      if (input.family_name !== undefined) patch.familyName = input.family_name
+      if (input.picture !== undefined) patch.picture = input.picture
       const u = await repo.update(id, patch)
       if (!u) throw AppError.notFound('user not found')
       return toPublic(u)
@@ -51,6 +65,9 @@ export function createUserService(deps: { repo: UserRepository }) {
     },
     async list(): Promise<PublicUser[]> {
       return (await repo.list()).map(toPublic)
+    },
+    getUserRecord(id: string): Promise<UserRecord | null> {
+      return repo.findById(id)
     },
   }
 }

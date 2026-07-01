@@ -34,6 +34,7 @@ export const tokenPairSchema = z.object({
   refresh_token: z.string(),
   token_type: z.literal('Bearer'),
   expires_in: z.number(),
+  id_token: z.string().optional(),
 })
 
 export const authorizeQuerySchema = z.object({
@@ -41,6 +42,7 @@ export const authorizeQuerySchema = z.object({
   redirect_uri: z.string().url(),
   scope: z.string().default(''),
   state: z.string().optional(),
+  nonce: z.string().optional(),
   code_challenge: z.string().min(1),
   code_challenge_method: z.literal('S256'),
 })

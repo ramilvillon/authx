@@ -97,18 +97,20 @@ const auth = new Hono<AppEnv>()
         codeChallengeMethod: q.code_challenge_method,
       })
       const sessionToken = getCookie(c, SESSION_COOKIE)
-      const userId = sessionToken
-        ? await c.var.authService.userIdForSession(sessionToken)
+      const session = sessionToken
+        ? await c.var.authService.resolveSession(sessionToken)
         : null
-      if (!userId) return c.html(loginPage(q))
+      if (!session) return c.html(loginPage(q))
       const code = await c.var.authService.issueAuthorizationCode(
-        userId,
+        session.userId,
         service,
         {
           redirectUri: q.redirect_uri,
           scope: q.scope,
           codeChallenge: q.code_challenge,
           codeChallengeMethod: q.code_challenge_method,
+          nonce: q.nonce,
+          authTime: session.authTime,
         },
       )
       return c.redirect(redirectTo(q.redirect_uri, { code, state: q.state }))
@@ -147,6 +149,8 @@ const auth = new Hono<AppEnv>()
           scope: f.scope,
           codeChallenge: f.code_challenge,
           codeChallengeMethod: f.code_challenge_method,
+          nonce: f.nonce,
+          authTime: new Date(),
         },
       )
       return c.redirect(redirectTo(f.redirect_uri, { code, state: f.state }))

@@ -60,6 +60,7 @@ async function getCode(
     scope: '',
     codeChallenge: await s256Challenge(VERIFIER),
     codeChallengeMethod: 'S256',
+    authTime: new Date(),
   })
 }
 
@@ -173,6 +174,7 @@ Deno.test('confidential client: replay with wrong secret still revokes token fam
       scope: '',
       codeChallenge: await s256Challenge(VERIFIER),
       codeChallengeMethod: 'S256',
+      authTime: new Date(),
     },
   )
 

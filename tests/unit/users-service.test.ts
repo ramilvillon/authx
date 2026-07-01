@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createInMemoryUserRepository } from '../../src/modules/users/users.repository.ts'
 import { createUserService } from '../../src/modules/users/users.service.ts'
+import { updateUserSchema } from '../../src/modules/users/users.schema.ts'
 import { verifyPassword } from '../../src/lib/password.ts'
 
 function service() {
@@ -26,4 +27,29 @@ Deno.test('register rejects duplicate email', async () => {
     Error,
     'already registered',
   )
+})
+
+Deno.test('update persists OIDC profile fields; email_verified is NOT client-settable', async () => {
+  const repo = createInMemoryUserRepository()
+  const svc = createUserService({ repo })
+  const now = new Date()
+  await repo.create({
+    id: 'u1',
+    email: 'a@b.com',
+    passwordHash: 'h',
+    createdAt: now,
+    updatedAt: now,
+  })
+  await svc.update('u1', { name: 'Ada L', given_name: 'Ada', family_name: 'L' })
+  const rec = await repo.findById('u1')
+  assertEquals(rec?.name, 'Ada L')
+  assertEquals(rec?.givenName, 'Ada')
+  // email_verified is internal-only: settable via the repo, never the client update schema
+  await repo.update('u1', { emailVerified: true })
+  assertEquals((await repo.findById('u1'))?.emailVerified, true)
+})
+
+Deno.test('updateUserSchema strips email_verified (not client-settable)', () => {
+  const parsed = updateUserSchema.parse({ name: 'X', email_verified: true })
+  assertEquals('email_verified' in parsed, false)
 })

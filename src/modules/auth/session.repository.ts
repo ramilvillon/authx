@@ -4,6 +4,7 @@ export type SessionRecord = {
   tokenHash: string
   expiresAt: Date
   revokedAt?: Date | null
+  createdAt: Date
 }
 
 export type NewSession = Pick<
@@ -23,7 +24,7 @@ export function createInMemorySessionRepository(): SessionRepository {
   const byId = new Map<string, SessionRecord>()
   return {
     create(s) {
-      byId.set(s.id, { ...s, revokedAt: null })
+      byId.set(s.id, { ...s, revokedAt: null, createdAt: new Date() })
       return Promise.resolve()
     },
     findActiveByTokenHash(tokenHash) {

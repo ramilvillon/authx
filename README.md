@@ -16,6 +16,8 @@ dependency-free so the `hc` RPC client keeps full type inference.
   carrying exactly that service's permissions for the user
 - **Multi-org + management API** — orgs, app services, members, and per-service
   RBAC managed via the management API, gated by the reserved `platform` audience
+- **OpenID Connect** — id_token on the authorization_code flow, /oauth/userinfo,
+  standard email/profile claims, full discovery document
 - **SSO (Authorization Code + PKCE)** — `GET/POST /oauth/authorize` with a
   server-side session; `grant_type=authorization_code` on `/oauth/token`
   exchanges a one-time PKCE-protected code for audience-scoped tokens
@@ -119,6 +121,8 @@ are rejected.
 | `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                   |
 | `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                |
 | `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                      |
+| `GET`    | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject       |
+| `POST`   | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject       |
 | `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                                   |
 | `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                                     |
 | `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                       |
@@ -184,6 +188,34 @@ curl -X POST localhost:3000/oauth/token \
 
 Confidential clients also send `"client_secret":"…"`. Only PKCE `S256` is
 supported.
+
+### OIDC
+
+To get an `id_token`, include `openid` (plus any of `email`, `profile`) in the
+authorization request scope:
+
+```
+GET /oauth/authorize?client_id=…&redirect_uri=…&scope=openid+email+profile
+  &code_challenge=…&code_challenge_method=S256&state=…&nonce=<nonce>
+```
+
+The token exchange (`grant_type=authorization_code`) returns the usual access
+token plus an `id_token` — a signed JWT whose `aud` is the `client_id`. The
+`id_token` carries the claims for the granted scopes.
+
+**UserInfo** — `/oauth/userinfo` accepts the user access token and returns the
+same claims:
+
+```bash
+curl localhost:3000/oauth/userinfo \
+  -H "authorization: Bearer <access_token>"
+```
+
+Profile claims (`name`, `given_name`, `family_name`, `picture`) are sourced from
+the user's profile fields, which can be set via `PATCH /users/:id`.
+`email_verified` is always `false` — no email-verification flow exists yet, and
+it is not settable via the user-update API (only an internal verification flow
+will flip it when implemented).
 
 ### Key rotation
 
