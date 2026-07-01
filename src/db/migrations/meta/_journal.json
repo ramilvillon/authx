@@ -36,6 +36,13 @@
       "when": 1782878047583,
       "tag": "0004_pink_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1782886976853,
+      "tag": "0005_empty_red_skull",
+      "breakpoints": true
     }
   ]
 }

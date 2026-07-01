@@ -8,7 +8,12 @@ export const registerSchema = z.object({
 export const updateUserSchema = z.object({
   email: z.string().email().optional(),
   password: z.string().min(8).optional(),
-}).refine((v) => v.email !== undefined || v.password !== undefined, {
+  name: z.string().max(255).optional(),
+  given_name: z.string().max(255).optional(),
+  family_name: z.string().max(255).optional(),
+  picture: z.string().url().max(1024).optional(),
+  email_verified: z.boolean().optional(),
+}).refine((v) => Object.keys(v).length > 0, {
   message: 'at least one field is required',
 })
 

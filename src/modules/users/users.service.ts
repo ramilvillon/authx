@@ -37,10 +37,28 @@ export function createUserService(deps: { repo: UserRepository }) {
       return toPublic(u)
     },
     async update(id: string, input: UpdateUserInput): Promise<PublicUser> {
-      const patch: Partial<Pick<UserRecord, 'email' | 'passwordHash'>> = {}
+      const patch: Partial<
+        Pick<
+          UserRecord,
+          | 'email'
+          | 'passwordHash'
+          | 'emailVerified'
+          | 'name'
+          | 'givenName'
+          | 'familyName'
+          | 'picture'
+        >
+      > = {}
       if (input.email) patch.email = input.email
       if (input.password) {
         patch.passwordHash = await hashPassword(input.password)
+      }
+      if (input.name !== undefined) patch.name = input.name
+      if (input.given_name !== undefined) patch.givenName = input.given_name
+      if (input.family_name !== undefined) patch.familyName = input.family_name
+      if (input.picture !== undefined) patch.picture = input.picture
+      if (input.email_verified !== undefined) {
+        patch.emailVerified = input.email_verified
       }
       const u = await repo.update(id, patch)
       if (!u) throw AppError.notFound('user not found')

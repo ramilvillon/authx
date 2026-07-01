@@ -1,4 +1,5 @@
 import {
+  boolean,
   datetime,
   index,
   mysqlTable,
@@ -12,6 +13,11 @@ export const users = mysqlTable('users', {
   id: varchar('id', { length: 36 }).primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }),
+  emailVerified: boolean('email_verified').notNull().default(false),
+  name: varchar('name', { length: 255 }),
+  givenName: varchar('given_name', { length: 255 }),
+  familyName: varchar('family_name', { length: 255 }),
+  picture: varchar('picture', { length: 1024 }),
   createdAt: datetime('created_at').notNull(),
   updatedAt: datetime('updated_at').notNull(),
 })

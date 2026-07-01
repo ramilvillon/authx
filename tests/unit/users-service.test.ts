@@ -27,3 +27,26 @@ Deno.test('register rejects duplicate email', async () => {
     'already registered',
   )
 })
+
+Deno.test('update persists OIDC profile fields', async () => {
+  const repo = createInMemoryUserRepository()
+  const svc = createUserService({ repo })
+  const now = new Date()
+  const created = await repo.create({
+    id: 'u1',
+    email: 'a@b.com',
+    passwordHash: 'h',
+    createdAt: now,
+    updatedAt: now,
+  })
+  await svc.update(created.id, {
+    name: 'Ada L',
+    given_name: 'Ada',
+    family_name: 'L',
+    email_verified: true,
+  })
+  const rec = await repo.findById('u1')
+  assertEquals(rec?.name, 'Ada L')
+  assertEquals(rec?.givenName, 'Ada')
+  assertEquals(rec?.emailVerified, true)
+})
