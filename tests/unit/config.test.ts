@@ -72,3 +72,14 @@ Deno.test('loadConfig parses JWT_PREVIOUS_PUBLIC_KEYS (defaults to [])', () => {
     ['pemA', 'pemB'],
   )
 })
+
+Deno.test('loadConfig defaults EMAIL_VERIFICATION_TTL', () => {
+  const cfg = loadConfig({
+    DB_USER: 'app',
+    DB_NAME: 'app',
+    JWT_PRIVATE_KEY: 'x',
+    JWT_PUBLIC_KEY: 'y',
+    JWT_ISSUER: 'http://t',
+  })
+  assertEquals(cfg.emailVerificationTtl, 86400)
+})

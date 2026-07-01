@@ -45,6 +45,11 @@ const users = new Hono<AppEnv>()
     validator('json', registerSchema),
     async (c) => {
       const user = await c.var.userService.register(c.req.valid('json'))
+      try {
+        await c.var.verificationService.startVerification(user.id, user.email)
+      } catch (err) {
+        c.var.logger.warn({ err }, 'verification email failed to send')
+      }
       return c.json(user, 201)
     },
   )

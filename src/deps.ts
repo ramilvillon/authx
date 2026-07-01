@@ -23,6 +23,13 @@ import {
   createAdminService,
 } from './modules/admin/admin.service.ts'
 import { type KeySet, loadKeyRing } from './lib/keys.ts'
+import { createLogger } from './lib/logger.ts'
+import { createLogEmailSender } from './lib/email.ts'
+import { createDrizzleVerificationTokenRepository } from './modules/verification/verification.repository.drizzle.ts'
+import {
+  createVerificationService,
+  type VerificationService,
+} from './modules/verification/verification.service.ts'
 
 export type Deps = {
   config: Config
@@ -31,6 +38,7 @@ export type Deps = {
   authService: AuthService
   adminService: AdminService
   rateStore: RateLimitStore
+  verificationService: VerificationService
 }
 
 export async function createDeps(config: Config, db: Database): Promise<Deps> {
@@ -41,6 +49,14 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const rbacRepo = createDrizzleRbacRepository(db)
   const sessionRepo = createDrizzleSessionRepository(db)
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
+  const verificationRepo = createDrizzleVerificationTokenRepository(db)
+  const emailSender = createLogEmailSender(createLogger(config))
+  const verificationService = createVerificationService({
+    verificationRepo,
+    userRepo,
+    emailSender,
+    config,
+  })
   const keySet = await loadKeyRing(
     config.jwtPrivateKey,
     config.jwtPublicKey,
@@ -65,6 +81,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       authCodeRepo,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
+    verificationService,
   }
 }
 

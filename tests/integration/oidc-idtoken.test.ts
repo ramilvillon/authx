@@ -129,3 +129,19 @@ Deno.test('an id_token is rejected as a Bearer access token', async () => {
   })
   assertEquals(res.status, 401)
 })
+
+Deno.test('a verified user gets email_verified:true in the id_token', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx) // registers a@b.com and seeds the service (existing helper)
+  // verify the email using the captured link
+  const token = new URL(ctx.sentEmails[0].link).searchParams.get('token')!
+  await ctx.app.request(`/verify-email?token=${token}`)
+
+  const challenge = await s256Challenge(VERIFIER)
+  const code = await codeFromLogin(ctx, challenge, 'openid email')
+  const body = await exchange(ctx, code)
+  const { payload } = decode(body.id_token) as {
+    payload: Record<string, unknown>
+  }
+  assertEquals(payload.email_verified, true)
+})

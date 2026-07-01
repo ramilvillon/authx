@@ -37,11 +37,14 @@ export function createUserService(deps: { repo: UserRepository }) {
       return toPublic(u)
     },
     async update(id: string, input: UpdateUserInput): Promise<PublicUser> {
+      const current = await repo.findById(id)
+      if (!current) throw AppError.notFound('user not found')
       const patch: Partial<
         Pick<
           UserRecord,
           | 'email'
           | 'passwordHash'
+          | 'emailVerified'
           | 'name'
           | 'givenName'
           | 'familyName'
@@ -56,6 +59,10 @@ export function createUserService(deps: { repo: UserRepository }) {
       if (input.given_name !== undefined) patch.givenName = input.given_name
       if (input.family_name !== undefined) patch.familyName = input.family_name
       if (input.picture !== undefined) patch.picture = input.picture
+      // A new email address is unverified until it is re-verified.
+      if (input.email && input.email !== current.email) {
+        patch.emailVerified = false
+      }
       const u = await repo.update(id, patch)
       if (!u) throw AppError.notFound('user not found')
       return toPublic(u)
