@@ -17,6 +17,27 @@ const wellknown = new Hono<AppEnv>()
         'authorization_code',
         'client_credentials',
       ],
+      userinfo_endpoint: `${iss}/oauth/userinfo`,
+      response_types_supported: ['code'],
+      subject_types_supported: ['public'],
+      scopes_supported: ['openid', 'email', 'profile'],
+      claims_supported: [
+        'sub',
+        'iss',
+        'aud',
+        'exp',
+        'iat',
+        'auth_time',
+        'nonce',
+        'email',
+        'email_verified',
+        'name',
+        'given_name',
+        'family_name',
+        'picture',
+      ],
+      token_endpoint_auth_methods_supported: ['client_secret_post'],
+      code_challenge_methods_supported: ['S256'],
     })
   })
 
