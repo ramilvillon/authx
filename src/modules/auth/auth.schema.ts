@@ -19,6 +19,12 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
     client_id: z.string().min(1),
     client_secret: z.string().optional(),
   }),
+  z.object({
+    grant_type: z.literal('client_credentials'),
+    client_id: z.string().min(1),
+    client_secret: z.string().min(1),
+    audience: z.string().min(1),
+  }),
 ])
 
 export const revokeSchema = z.object({ refresh_token: z.string().min(1) })
@@ -43,6 +49,15 @@ export const authorizeFormSchema = authorizeQuerySchema.extend({
   email: z.string().email(),
   password: z.string().min(1),
 })
+
+export const clientCredentialsResponseSchema = z.object({
+  access_token: z.string(),
+  token_type: z.literal('Bearer'),
+  expires_in: z.number(),
+})
+export type ClientCredentialsResponse = z.infer<
+  typeof clientCredentialsResponseSchema
+>
 
 export type TokenRequest = z.infer<typeof tokenRequestSchema>
 export type TokenPair = z.infer<typeof tokenPairSchema>

@@ -53,13 +53,19 @@ const auth = new Hono<AppEnv>()
         ? await svc.passwordGrant(body.username, body.password, body.audience)
         : body.grant_type === 'refresh_token'
         ? await svc.refreshGrant(body.refresh_token)
-        : await svc.exchangeAuthorizationCode({
+        : body.grant_type === 'authorization_code'
+        ? await svc.exchangeAuthorizationCode({
           code: body.code,
           redirectUri: body.redirect_uri,
           codeVerifier: body.code_verifier,
           clientId: body.client_id,
           clientSecret: body.client_secret,
         })
+        : await svc.clientCredentialsGrant(
+          body.client_id,
+          body.client_secret,
+          body.audience,
+        )
       return c.json(pair, 200)
     },
   )
