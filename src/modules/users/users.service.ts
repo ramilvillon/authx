@@ -42,7 +42,6 @@ export function createUserService(deps: { repo: UserRepository }) {
           UserRecord,
           | 'email'
           | 'passwordHash'
-          | 'emailVerified'
           | 'name'
           | 'givenName'
           | 'familyName'
@@ -57,9 +56,6 @@ export function createUserService(deps: { repo: UserRepository }) {
       if (input.given_name !== undefined) patch.givenName = input.given_name
       if (input.family_name !== undefined) patch.familyName = input.family_name
       if (input.picture !== undefined) patch.picture = input.picture
-      if (input.email_verified !== undefined) {
-        patch.emailVerified = input.email_verified
-      }
       const u = await repo.update(id, patch)
       if (!u) throw AppError.notFound('user not found')
       return toPublic(u)

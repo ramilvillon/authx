@@ -12,8 +12,7 @@ export const updateUserSchema = z.object({
   given_name: z.string().max(255).optional(),
   family_name: z.string().max(255).optional(),
   picture: z.string().url().max(1024).optional(),
-  email_verified: z.boolean().optional(),
-}).refine((v) => Object.keys(v).length > 0, {
+}).refine((v) => Object.values(v).some((x) => x !== undefined), {
   message: 'at least one field is required',
 })
 
