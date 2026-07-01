@@ -117,3 +117,15 @@ Deno.test('non-openid code flow returns NO id_token', async () => {
   const body = await exchange(ctx, code)
   assertEquals(body.id_token, undefined)
 })
+
+Deno.test('an id_token is rejected as a Bearer access token', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx)
+  const challenge = await s256Challenge(VERIFIER)
+  const code = await codeFromLogin(ctx, challenge, 'openid email')
+  const body = await exchange(ctx, code)
+  const res = await ctx.app.request('/users/me', {
+    headers: { authorization: `Bearer ${body.id_token}` },
+  })
+  assertEquals(res.status, 401)
+})

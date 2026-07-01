@@ -57,4 +57,5 @@ Deno.test('userinfo rejects an M2M token (no user for sub) with 401', async () =
     headers: { authorization: `Bearer ${token}` },
   })
   assertEquals(res.status, 401)
+  assert(res.headers.get('www-authenticate')?.startsWith('Bearer'))
 })

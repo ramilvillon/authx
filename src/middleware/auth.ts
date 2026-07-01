@@ -15,6 +15,12 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   } catch {
     throw AppError.unauthorized('invalid token')
   }
+  // An id_token (no scope/client_id) must not authenticate as an access token.
+  if (
+    typeof claims.client_id !== 'string' || typeof claims.scope !== 'string'
+  ) {
+    throw AppError.unauthorized('invalid token')
+  }
   // Authorization is carried by the token's scope claim, not a DB role lookup;
   // email is the only thing we fetch (and only if the subject still exists).
   const user = await c.var.userService.getById(claims.sub).catch(() => null)
