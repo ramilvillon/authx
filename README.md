@@ -20,6 +20,10 @@ dependency-free so the `hc` RPC client keeps full type inference.
   server-side session; `grant_type=authorization_code` on `/oauth/token`
   exchanges a one-time PKCE-protected code for audience-scoped tokens
 - **Google social login** — verified-email requirement (`/oauth/google`)
+- **M2M (client_credentials)** — a confidential service exchanges client_id +
+  client_secret for a short-lived audience-scoped token whose scope is its RBAC
+  permissions in the target service
+- **Key rotation** — multiple keys in JWKS with a kid header; verify-by-kid
 - **RBAC** — roles + permissions with ownership checks (self-or-permission)
 - **Pluggable rate limiting** — in-memory store, stricter throttle on auth
   routes
@@ -73,6 +77,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`        |
 | `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS           |
 | `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                        |
+| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation          |
 | `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin |
 | `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; password for the bootstrap admin                         |
 | `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                    |
@@ -99,25 +104,25 @@ are rejected.
 
 ## API endpoints
 
-| Method   | Path                                | Auth                               | Description                                  |
-| -------- | ----------------------------------- | ---------------------------------- | -------------------------------------------- |
-| `GET`    | `/health`                           | —                                  | Liveness check                               |
-| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)           |
-| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                   |
-| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                   |
-| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                   |
-| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                                |
-| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                |
-| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password or refresh grant             |
-| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                       |
-| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)    |
-| `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`    |
-| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code` |
-| `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                       |
-| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                    |
-| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                      |
-| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                        |
-| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                      |
+| Method   | Path                                | Auth                               | Description                                                 |
+| -------- | ----------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| `GET`    | `/health`                           | —                                  | Liveness check                                              |
+| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)                          |
+| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                                  |
+| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                                  |
+| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                  |
+| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                                               |
+| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                               |
+| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant |
+| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                      |
+| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)                   |
+| `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                   |
+| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                |
+| `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                      |
+| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                                   |
+| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                                     |
+| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                       |
+| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                                     |
 
 `POST /oauth/token` accepts an optional `audience` (a service's `audience`
 string); the returned access token then carries exactly the permissions that
@@ -128,19 +133,20 @@ user has in that service. Omit it for the default audience.
 These routes require a Bearer token minted for the reserved `platform` audience
 (`requireAuth` + `requirePlatform`) plus the listed permission.
 
-| Method   | Path                        | Permission       | Description                          |
-| -------- | --------------------------- | ---------------- | ------------------------------------ |
-| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization               |
-| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                   |
-| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                  |
-| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret) |
-| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services               |
-| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                         |
-| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                      |
-| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service          |
-| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service    |
-| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role         |
-| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user              |
+| Method   | Path                        | Permission       | Description                              |
+| -------- | --------------------------- | ---------------- | ---------------------------------------- |
+| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization                   |
+| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                       |
+| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                      |
+| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret)     |
+| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services                   |
+| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                             |
+| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                          |
+| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service              |
+| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service        |
+| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role             |
+| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user                  |
+| `POST`   | `/clients/:clientId/roles`  | `rbac:write`     | Grant a role to a client (M2M principal) |
 
 Setting `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` before
 `deno task
@@ -178,6 +184,22 @@ curl -X POST localhost:3000/oauth/token \
 
 Confidential clients also send `"client_secret":"…"`. Only PKCE `S256` is
 supported.
+
+### Key rotation
+
+Generate a new pair (`deno task keys:gen`) → set it as
+`JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY`, move the old public PEM into
+`JWT_PREVIOUS_PUBLIC_KEYS` (JSON array) → deploy. Both keys appear in JWKS so
+verifiers pick by `kid`; drop the retired public key after the access-token TTL
+elapses.
+
+### M2M (client_credentials)
+
+```bash
+curl -X POST localhost:3000/oauth/token \
+  -H 'content-type: application/json' \
+  -d '{"grant_type":"client_credentials","client_id":"<cid>","client_secret":"<secret>","audience":"<target-audience>"}'
+```
 
 ## Type-safe RPC client
 

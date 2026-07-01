@@ -7,6 +7,7 @@ import { requirePermission } from '../../middleware/authorize.ts'
 import { AppError } from '../../lib/errors.ts'
 import {
   addMemberSchema,
+  assignClientRoleSchema,
   assignRoleSchema,
   createOrgSchema,
   createPermissionSchema,
@@ -163,6 +164,20 @@ const admin = new Hono<AppEnv>()
     async (c) => {
       await c.var.adminService.assignRole(
         c.req.param('userId'),
+        c.req.valid('json').roleId,
+      )
+      return c.body(null, 204)
+    },
+  )
+  .post(
+    '/clients/:clientId/roles',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:write'),
+    validator('json', assignClientRoleSchema),
+    async (c) => {
+      await c.var.adminService.assignRoleToClient(
+        c.req.param('clientId'),
         c.req.valid('json').roleId,
       )
       return c.body(null, 204)

@@ -22,3 +22,4 @@ export const grantPermissionSchema = z.object({
   permissionId: z.string().min(1),
 })
 export const assignRoleSchema = z.object({ roleId: z.string().min(1) })
+export const assignClientRoleSchema = z.object({ roleId: z.string().min(1) })
