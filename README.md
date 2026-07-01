@@ -21,6 +21,9 @@ dependency-free so the `hc` RPC client keeps full type inference.
 - **SSO (Authorization Code + PKCE)** — `GET/POST /oauth/authorize` with a
   server-side session; `grant_type=authorization_code` on `/oauth/token`
   exchanges a one-time PKCE-protected code for audience-scoped tokens
+- **Email verification** — registration sends a single-use verification link via
+  a pluggable EmailSender (log default); GET /verify-email flips email_verified
+  true
 - **Google social login** — verified-email requirement (`/oauth/google`)
 - **M2M (client_credentials)** — a confidential service exchanges client_id +
   client_secret for a short-lived audience-scoped token whose scope is its RBAC
@@ -86,6 +89,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                   |
 | `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                     |
 | `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                              |
+| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                         |
 | `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                             |
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                         |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                               |
@@ -115,6 +119,8 @@ are rejected.
 | `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                  |
 | `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user                                               |
 | `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                               |
+| `GET`    | `/verify-email`                     | —                                  | Verify via emailed token                                    |
+| `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                      |
 | `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant |
 | `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                      |
 | `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)                   |
@@ -213,9 +219,19 @@ curl localhost:3000/oauth/userinfo \
 
 Profile claims (`name`, `given_name`, `family_name`, `picture`) are sourced from
 the user's profile fields, which can be set via `PATCH /users/:id`.
-`email_verified` is always `false` — no email-verification flow exists yet, and
-it is not settable via the user-update API (only an internal verification flow
-will flip it when implemented).
+`email_verified` reflects whether the user has clicked the verification link; it
+is surfaced in both the id_token and the UserInfo response.
+
+### Email verification
+
+Registration triggers a verification email. The default `EmailSender` logs the
+link to stdout; implement `EmailSender` in `src/lib/email.ts` for real
+SMTP/webhook delivery. Clicking the link sets `email_verified: true`, which is
+surfaced in the OIDC id_token and UserInfo endpoint. The resend endpoint
+(`POST /verify-email/resend`) is anti-enumeration — it always returns 204
+regardless of whether the address exists or is already verified. Changing a
+user's email resets `email_verified` to false. Verification is non-blocking: it
+does not gate login.
 
 ### Key rotation
 
