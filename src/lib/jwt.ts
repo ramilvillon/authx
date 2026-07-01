@@ -1,4 +1,6 @@
 import { decode, sign, verify } from 'hono/jwt'
+import type { KeySet } from './keys.ts'
+import { privatePemToSigningJwk } from './keys.ts'
 
 export type AccessPayload = {
   iss: string
@@ -37,13 +39,31 @@ export async function signAccessToken(
     iat: now,
     exp: now + opts.ttlSeconds,
   }
-  return await sign(payload, opts.privateKeyPem, 'RS256')
+  // Sign with a JWK carrying alg+kid so the `kid` lands in the JWT header.
+  // ponytail: converts PEM→JWK per call; precompute on the key ring if signing
+  // throughput ever matters.
+  const signingJwk = await privatePemToSigningJwk(opts.privateKeyPem, opts.kid)
+  return await sign(payload, signingJwk, 'RS256')
 }
 
 export async function verifyAccessToken(
   token: string,
   publicKeyPem: string,
 ): Promise<AccessClaims> {
+  return await verify(token, publicKeyPem, 'RS256') as AccessClaims
+}
+
+// Verify against the key ring: pick the key by the token's `kid`, or the active
+// key when a token carries no kid (pre-rotation tokens). Unknown kid → reject.
+export async function verifyWithKeyRing(
+  token: string,
+  keySet: KeySet,
+): Promise<AccessClaims> {
+  const { header } = decode(token) as { header: { kid?: string } }
+  const publicKeyPem = header.kid
+    ? keySet.byKid.get(header.kid)
+    : keySet.publicKeyPem
+  if (!publicKeyPem) throw new Error('unknown signing key')
   return await verify(token, publicKeyPem, 'RS256') as AccessClaims
 }
 

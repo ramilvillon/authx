@@ -9,6 +9,7 @@ export type KeySet = {
   publicKeyPem: string
   kid: string
   jwks: { keys: Jwk[] }
+  byKid: Map<string, string>
 }
 
 const RSA = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' } as const
@@ -54,10 +55,7 @@ async function thumbprint(jwk: JsonWebKey): Promise<string> {
   return encodeBase64Url(new Uint8Array(digest))
 }
 
-export async function loadKeySet(
-  privateKeyPem: string,
-  publicKeyPem: string,
-): Promise<KeySet> {
+async function publicPemToJwk(publicKeyPem: string): Promise<Jwk> {
   const pub = await crypto.subtle.importKey(
     'spki',
     pemToDer(publicKeyPem),
@@ -67,13 +65,49 @@ export async function loadKeySet(
   )
   const jwk = await crypto.subtle.exportKey('jwk', pub)
   const kid = await thumbprint(jwk)
-  const publicJwk: Jwk = {
-    kty: jwk.kty,
-    n: jwk.n,
-    e: jwk.e,
-    alg: 'RS256',
-    use: 'sig',
-    kid,
+  return { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', use: 'sig', kid }
+}
+
+// Import the active private key and re-export it as a JWK carrying alg + kid, so
+// hono/jwt emits a `kid` header when signing (it reads kid off a JWK signing key).
+export async function privatePemToSigningJwk(
+  privateKeyPem: string,
+  kid: string,
+): Promise<Jwk> {
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToDer(privateKeyPem),
+    RSA,
+    true,
+    ['sign'],
+  )
+  const jwk = await crypto.subtle.exportKey('jwk', key)
+  return { ...jwk, alg: 'RS256', kid } as Jwk
+}
+
+export async function loadKeyRing(
+  activePrivatePem: string,
+  activePublicPem: string,
+  previousPublicPems: string[] = [],
+): Promise<KeySet> {
+  const activeJwk = await publicPemToJwk(activePublicPem)
+  const previousJwks = await Promise.all(previousPublicPems.map(publicPemToJwk))
+  const byKid = new Map<string, string>()
+  byKid.set(activeJwk.kid, activePublicPem)
+  previousPublicPems.forEach((pem, i) => byKid.set(previousJwks[i].kid, pem))
+  return {
+    privateKeyPem: activePrivatePem,
+    publicKeyPem: activePublicPem,
+    kid: activeJwk.kid,
+    jwks: { keys: [activeJwk, ...previousJwks] },
+    byKid,
   }
-  return { privateKeyPem, publicKeyPem, kid, jwks: { keys: [publicJwk] } }
+}
+
+// Back-compat single-key loader; delegates to the ring. (Removed in Task 2.)
+export async function loadKeySet(
+  privateKeyPem: string,
+  publicKeyPem: string,
+): Promise<KeySet> {
+  return await loadKeyRing(privateKeyPem, publicKeyPem, [])
 }
