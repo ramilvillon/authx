@@ -249,6 +249,20 @@ curl -X POST localhost:3000/oauth/token \
   -d '{"grant_type":"client_credentials","client_id":"<cid>","client_secret":"<secret>","audience":"<target-audience>"}'
 ```
 
+## Errors
+
+All error responses use a consistent envelope:
+
+```json
+{ "error": { "code": "<machine_code>", "message": "..." } }
+```
+
+The HTTP status reflects the error class (400 / 401 / 403 / 404 / 409). `code`
+is a stable machine-readable identifier from the catalogue in
+`src/lib/errors.ts` (e.g. `invalid_grant`, `user_not_found`, `email_taken`).
+Clients should branch on `code`, not on the human-readable `message` — messages
+may be revised without a version bump; codes are stable.
+
 ## Type-safe RPC client
 
 `src/client.ts` exports an `hc<AppType>` client typed by the live route tree.

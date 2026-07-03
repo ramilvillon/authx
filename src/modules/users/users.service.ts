@@ -18,7 +18,7 @@ export function createUserService(deps: { repo: UserRepository }) {
   return {
     async register(input: RegisterInput): Promise<PublicUser> {
       if (await repo.findByEmail(input.email)) {
-        throw AppError.conflict('email already registered')
+        throw AppError.of('email_taken')
       }
       const now = new Date()
       const user = await repo.create({
@@ -33,12 +33,12 @@ export function createUserService(deps: { repo: UserRepository }) {
     },
     async getById(id: string): Promise<PublicUser> {
       const u = await repo.findById(id)
-      if (!u) throw AppError.notFound('user not found')
+      if (!u) throw AppError.of('user_not_found')
       return toPublic(u)
     },
     async update(id: string, input: UpdateUserInput): Promise<PublicUser> {
       const current = await repo.findById(id)
-      if (!current) throw AppError.notFound('user not found')
+      if (!current) throw AppError.of('user_not_found')
       const patch: Partial<
         Pick<
           UserRecord,
@@ -64,11 +64,11 @@ export function createUserService(deps: { repo: UserRepository }) {
         patch.emailVerified = false
       }
       const u = await repo.update(id, patch)
-      if (!u) throw AppError.notFound('user not found')
+      if (!u) throw AppError.of('user_not_found')
       return toPublic(u)
     },
     async remove(id: string): Promise<void> {
-      if (!(await repo.delete(id))) throw AppError.notFound('user not found')
+      if (!(await repo.delete(id))) throw AppError.of('user_not_found')
     },
     async list(): Promise<PublicUser[]> {
       return (await repo.list()).map(toPublic)
