@@ -25,7 +25,7 @@ import {
 const PLATFORM_AUDIENCE = 'platform'
 const requirePlatform = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.aud !== PLATFORM_AUDIENCE) {
-    throw AppError.forbidden('platform token required')
+    throw AppError.of('platform_required')
   }
   await next()
 })

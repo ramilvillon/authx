@@ -13,7 +13,7 @@ export function createAdminService(deps: {
 
   async function requireService(id: string) {
     const s = await orgRepo.findServiceById(id)
-    if (!s) throw AppError.notFound('service not found')
+    if (!s) throw AppError.of('service_not_found')
     return s
   }
 
@@ -29,7 +29,7 @@ export function createAdminService(deps: {
     listOrgs: () => orgRepo.listOrgs(),
     async getOrg(id: string) {
       const o = await orgRepo.findOrgById(id)
-      if (!o) throw AppError.notFound('org not found')
+      if (!o) throw AppError.of('org_not_found')
       return o
     },
     async registerService(orgId: string, input: {
@@ -40,7 +40,7 @@ export function createAdminService(deps: {
       redirectUris: string[]
     }) {
       if (!(await orgRepo.findOrgById(orgId))) {
-        throw AppError.notFound('org not found')
+        throw AppError.of('org_not_found')
       }
       const clientId = `cid_${generateRefreshToken().slice(0, 24)}`
       // Confidential clients get a secret; returned once, stored hashed.
@@ -64,7 +64,7 @@ export function createAdminService(deps: {
     listServices: (orgId: string) => orgRepo.listServicesByOrg(orgId),
     async addMember(orgId: string, userId: string) {
       if (!(await orgRepo.findOrgById(orgId))) {
-        throw AppError.notFound('org not found')
+        throw AppError.of('org_not_found')
       }
       await orgRepo.addMember({
         id: crypto.randomUUID(),

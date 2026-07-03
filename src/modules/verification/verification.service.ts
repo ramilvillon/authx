@@ -37,20 +37,20 @@ export function createVerificationService(deps: {
     startVerification,
     async verifyEmail(token: string): Promise<void> {
       const record = await verificationRepo.findByHash(await hashToken(token))
-      if (!record) throw AppError.badRequest('invalid verification link')
+      if (!record) throw AppError.of('invalid_verification_link')
       if (record.consumedAt) {
-        throw AppError.badRequest('invalid verification link')
+        throw AppError.of('invalid_verification_link')
       }
       if (record.expiresAt.getTime() <= Date.now()) {
-        throw AppError.badRequest('verification link expired')
+        throw AppError.of('verification_link_expired')
       }
       const user = await userRepo.findById(record.userId)
       // Stale link: the user changed their email since the link was issued.
       if (!user || user.email !== record.email) {
-        throw AppError.badRequest('invalid verification link')
+        throw AppError.of('invalid_verification_link')
       }
       if (!(await verificationRepo.consume(record.id))) {
-        throw AppError.badRequest('invalid verification link')
+        throw AppError.of('invalid_verification_link')
       }
       await userRepo.update(user.id, { emailVerified: true })
     },

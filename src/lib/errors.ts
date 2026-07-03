@@ -54,29 +54,16 @@ export type ErrorCode = keyof typeof ERRORS
 
 export class AppError extends Error {
   readonly status: ContentfulStatusCode
-  readonly code: string
+  readonly code: ErrorCode
 
-  constructor(status: ContentfulStatusCode, code: string, message: string) {
+  private constructor(code: ErrorCode, message: string) {
     super(message)
     this.name = 'AppError'
-    this.status = status
     this.code = code
+    this.status = ERRORS[code].status as ContentfulStatusCode
   }
 
   static of(code: ErrorCode, message?: string): AppError {
-    const e = ERRORS[code]
-    return new AppError(
-      e.status as ContentfulStatusCode,
-      code,
-      message ?? e.message,
-    )
+    return new AppError(code, message ?? ERRORS[code].message)
   }
-
-  // Deprecated: kept only so existing call sites compile until they migrate to
-  // AppError.of in Task 2, then removed.
-  static badRequest = (m: string) => new AppError(400, 'bad_request', m)
-  static unauthorized = (m: string) => new AppError(401, 'unauthorized', m)
-  static forbidden = (m: string) => new AppError(403, 'forbidden', m)
-  static notFound = (m: string) => new AppError(404, 'not_found', m)
-  static conflict = (m: string) => new AppError(409, 'conflict', m)
 }

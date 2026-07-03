@@ -53,9 +53,9 @@ export function createAuthService(deps: {
     oidcScope?: string,
   ): Promise<TokenPair> {
     const service = await orgRepo.findServiceByAudience(audience)
-    if (!service) throw AppError.badRequest('unknown audience')
+    if (!service) throw AppError.of('unknown_audience')
     if (!(await orgRepo.isMember(userId, service.orgId))) {
-      throw AppError.forbidden('not a member of this organization')
+      throw AppError.of('not_org_member')
     }
     const scopes = await rbacRepo.permissionsForUserInService(
       userId,
@@ -101,25 +101,25 @@ export function createAuthService(deps: {
       const hash = user?.passwordHash ?? await getDummyHash()
       const passwordOk = await verifyPassword(password, hash)
       if (!user || !user.passwordHash || !passwordOk) {
-        throw AppError.unauthorized('invalid credentials')
+        throw AppError.of('invalid_credentials')
       }
       return issueTokensForService(user.id, audience)
     },
     async refreshGrant(refreshToken: string): Promise<TokenPair> {
       const hash = await hashToken(refreshToken)
       const existing = await tokenRepo.findByHash(hash)
-      if (!existing) throw AppError.unauthorized('invalid refresh token')
+      if (!existing) throw AppError.of('invalid_refresh_token')
 
       const isExpired = existing.expiresAt.getTime() <= Date.now()
       // Reuse of an already-revoked token signals theft: revoke the whole family.
       if (existing.revokedAt) {
         await tokenRepo.revokeAllForUser(existing.userId)
-        throw AppError.unauthorized('refresh token reuse detected')
+        throw AppError.of('refresh_token_reuse')
       }
-      if (isExpired) throw AppError.unauthorized('invalid refresh token')
+      if (isExpired) throw AppError.of('invalid_refresh_token')
 
       const service = await orgRepo.findServiceById(existing.appServiceId)
-      if (!service) throw AppError.unauthorized('invalid refresh token')
+      if (!service) throw AppError.of('invalid_refresh_token')
       const scopes = await rbacRepo.permissionsForUserInService(
         existing.userId,
         service.id,
@@ -149,7 +149,7 @@ export function createAuthService(deps: {
       // consumed this token (replay), so revoke the family and reject.
       if (!(await tokenRepo.rotate(existing.id, next))) {
         await tokenRepo.revokeAllForUser(existing.userId)
-        throw AppError.unauthorized('refresh token reuse detected')
+        throw AppError.of('refresh_token_reuse')
       }
       return {
         access_token,
@@ -179,7 +179,7 @@ export function createAuthService(deps: {
       // Never create-or-link an account from an unverified provider email:
       // that would let an attacker take over an account by claiming its email.
       if (!profile.emailVerified) {
-        throw AppError.forbidden('google account email is not verified')
+        throw AppError.of('google_email_unverified')
       }
 
       const user = await userRepo.findByEmail(profile.email)
@@ -205,9 +205,7 @@ export function createAuthService(deps: {
       if (user.passwordHash !== null) {
         // Pre-hijacking guard: a local account with a password must prove
         // ownership via password login before linking a social provider.
-        throw AppError.forbidden(
-          'an account with this email already exists; sign in with your password to link Google',
-        )
+        throw AppError.of('account_exists_link_password')
       }
 
       // Passwordless user (e.g., invite-created): safe to link.
@@ -226,12 +224,12 @@ export function createAuthService(deps: {
       codeChallengeMethod: string
     }): Promise<AppServiceRecord> {
       const service = await orgRepo.findServiceByClientId(p.clientId)
-      if (!service) throw AppError.badRequest('unknown client_id')
+      if (!service) throw AppError.of('unknown_client_id')
       if (!service.redirectUris.includes(p.redirectUri)) {
-        throw AppError.badRequest('redirect_uri not allowed')
+        throw AppError.of('redirect_uri_not_allowed')
       }
       if (p.codeChallengeMethod !== 'S256' || !p.codeChallenge) {
-        throw AppError.badRequest('code_challenge with S256 is required')
+        throw AppError.of('code_challenge_required')
       }
       return service
     },
@@ -265,7 +263,7 @@ export function createAuthService(deps: {
     ): Promise<string> {
       // ponytail: guard here (the only writer) so the DB never holds a non-S256 record.
       if (p.codeChallengeMethod !== 'S256') {
-        throw AppError.badRequest('unsupported code_challenge_method')
+        throw AppError.of('unsupported_code_challenge_method')
       }
       const code = generateRefreshToken()
       await authCodeRepo.create({
@@ -292,7 +290,7 @@ export function createAuthService(deps: {
       const hash = user?.passwordHash ?? await getDummyHash()
       const passwordOk = await verifyPassword(password, hash)
       if (!user || !user.passwordHash || !passwordOk) {
-        throw AppError.unauthorized('invalid credentials')
+        throw AppError.of('invalid_credentials')
       }
       const token = generateRefreshToken()
       await sessionRepo.create({
@@ -313,39 +311,39 @@ export function createAuthService(deps: {
       const record = await authCodeRepo.findByCodeHash(
         await hashToken(input.code),
       )
-      if (!record) throw AppError.badRequest('invalid_grant')
+      if (!record) throw AppError.of('invalid_grant')
 
       const service = await orgRepo.findServiceById(record.appServiceId)
       if (!service || service.clientId !== input.clientId) {
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       // Replay of a consumed code: the code (and any token minted from it) may be
       // compromised — revoke the user's refresh-token family.
       // Must fire BEFORE client-auth so a replay with a wrong secret still revokes.
       if (record.consumedAt) {
         await tokenRepo.revokeAllForUser(record.userId)
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       if (record.expiresAt.getTime() <= Date.now()) {
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       if (record.redirectUri !== input.redirectUri) {
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       // Confidential clients must authenticate (secret stored as sha256, like Phase 1).
       if (service.type === 'confidential') {
         const ok = service.clientSecretHash !== null &&
           input.clientSecret !== undefined &&
           (await hashToken(input.clientSecret)) === service.clientSecretHash
-        if (!ok) throw AppError.unauthorized('invalid_client')
+        if (!ok) throw AppError.of('invalid_client')
       }
       if (!(await verifyChallenge(input.codeVerifier, record.codeChallenge))) {
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       // Single-use; a lost race here is also a replay.
       if (!(await authCodeRepo.consume(record.id))) {
         await tokenRepo.revokeAllForUser(record.userId)
-        throw AppError.badRequest('invalid_grant')
+        throw AppError.of('invalid_grant')
       }
       const oidc = grantedOidcScopes(record.scope)
       const pair = await issueTokensForService(
@@ -386,10 +384,10 @@ export function createAuthService(deps: {
         requesting.clientSecretHash === null ||
         (await hashToken(clientSecret)) !== requesting.clientSecretHash
       ) {
-        throw AppError.unauthorized('invalid_client')
+        throw AppError.of('invalid_client')
       }
       const target = await orgRepo.findServiceByAudience(audience)
-      if (!target) throw AppError.badRequest('invalid_request')
+      if (!target) throw AppError.of('invalid_request')
 
       const scopes = await rbacRepo.permissionsForClientInService(
         requesting.id,
