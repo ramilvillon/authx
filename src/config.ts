@@ -45,7 +45,6 @@ const schema = z.object({
   TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((v) =>
     v === 'true'
   ),
-  REDIS_URL: z.string().optional(),
 })
 
 export type Config = {
@@ -70,7 +69,6 @@ export type Config = {
   google: { clientId: string; clientSecret: string; redirectUri: string }
   rateLimit: { windowMs: number; max: number }
   trustProxy: boolean
-  redisUrl?: string
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -106,6 +104,5 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     rateLimit: { windowMs: e.RATE_LIMIT_WINDOW_MS, max: e.RATE_LIMIT_MAX },
     trustProxy: e.TRUST_PROXY,
-    redisUrl: e.REDIS_URL,
   }
 }

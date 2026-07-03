@@ -41,7 +41,7 @@ dependency-free so the `hc` RPC client keeps full type inference.
 ## Prerequisites
 
 - [asdf](https://asdf-vm.com/) (pins Deno, Node, gitleaks via `.tool-versions`)
-- Docker (for MySQL, and optionally Redis)
+- Docker (for MySQL)
 
 ```bash
 asdf install          # installs deno, nodejs, gitleaks at pinned versions
@@ -96,7 +96,6 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                              |
 | `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                 |
 | `TRUST_PROXY`              | `false`                              | set `true` only behind a trusted proxy (honors `X-Forwarded-For`)  |
-| `REDIS_URL`                | _(unset)_                            | optional; enable for a shared rate-limit store                     |
 
 ### Google OAuth
 
@@ -268,15 +267,6 @@ may be revised without a version bump; codes are stable.
 `src/client.ts` exports an `hc<AppType>` client typed by the live route tree.
 Import it from another Deno/TypeScript project to call the API with full
 inference on paths, params, and response bodies.
-
-## Rate limiting with Redis
-
-The default store is in-memory (per-process). To run a shared store:
-
-```bash
-docker compose --profile redis up -d   # starts MySQL + Redis
-# set REDIS_URL=redis://localhost:6379 in .env
-```
 
 ## Development
 

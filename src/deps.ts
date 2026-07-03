@@ -7,10 +7,7 @@ import type { AuthService } from './modules/auth/auth.service.ts'
 import type { RateLimitStore } from './lib/rate-limit-store.ts'
 import { createUserService } from './modules/users/users.service.ts'
 import { createAuthService } from './modules/auth/auth.service.ts'
-import {
-  createMemoryRateLimitStore,
-  createRedisRateLimitStore,
-} from './lib/rate-limit-store.ts'
+import { createMemoryRateLimitStore } from './lib/rate-limit-store.ts'
 import { createDrizzleUserRepository } from './modules/users/users.repository.drizzle.ts'
 import { createDrizzleRefreshTokenRepository } from './modules/auth/token.repository.drizzle.ts'
 import { createDrizzleSocialAccountRepository } from './modules/auth/social.repository.drizzle.ts'
@@ -65,9 +62,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   return {
     config,
     keySet,
-    rateStore: config.redisUrl
-      ? createRedisRateLimitStore(config.redisUrl)
-      : createMemoryRateLimitStore(),
+    rateStore: createMemoryRateLimitStore(),
     userService: createUserService({ repo: userRepo }),
     authService: createAuthService({
       userRepo,
