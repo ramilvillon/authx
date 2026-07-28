@@ -25,7 +25,6 @@ Deno.test('loadConfig parses and coerces env', () => {
   const cfg = loadConfig(base)
   assertEquals(cfg.port, 3000)
   assertEquals(cfg.accessTokenTtl, 900)
-  assertEquals(cfg.redisUrl, undefined)
   assertEquals(cfg.db, {
     host: 'localhost',
     port: 3306,

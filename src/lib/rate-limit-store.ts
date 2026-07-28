@@ -3,7 +3,7 @@ import type { Store } from 'hono-rate-limiter'
 export type RateLimitStore = Store
 
 // A minimal in-memory fixed-window store implementing hono-rate-limiter's
-// Store contract. Default store when no REDIS_URL is configured.
+// Store contract. Per-process; swap for a shared store if you scale out.
 export function createMemoryRateLimitStore(): RateLimitStore {
   const hits = new Map<string, { count: number; resetAt: number }>()
   let windowMs = 60000
@@ -31,10 +31,4 @@ export function createMemoryRateLimitStore(): RateLimitStore {
       hits.delete(key)
     },
   }
-}
-
-export function createRedisRateLimitStore(_redisUrl: string): RateLimitStore {
-  // The Redis-backed store is the optional production swap: it implements the
-  // same Store contract across instances. Wire a redis client here.
-  throw new Error('Redis rate-limit store not configured in this environment')
 }
