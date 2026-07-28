@@ -47,7 +47,10 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const sessionRepo = createDrizzleSessionRepository(db)
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
   const verificationRepo = createDrizzleVerificationTokenRepository(db)
-  const emailSender = createLogEmailSender(createLogger(config))
+  const emailSender = createLogEmailSender(
+    createLogger(config),
+    config.emailLogLinks,
+  )
   const verificationService = createVerificationService({
     verificationRepo,
     userRepo,
@@ -63,7 +66,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
     config,
     keySet,
     rateStore: createMemoryRateLimitStore(),
-    userService: createUserService({ repo: userRepo }),
+    userService: createUserService({ repo: userRepo, tokenRepo, sessionRepo }),
     authService: createAuthService({
       userRepo,
       tokenRepo,

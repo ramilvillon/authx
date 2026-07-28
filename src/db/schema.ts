@@ -31,7 +31,7 @@ export const refreshTokens = mysqlTable('refresh_tokens', {
   revokedAt: datetime('revoked_at'),
   replacedBy: varchar('replaced_by', { length: 36 }),
   createdAt: datetime('created_at').notNull(),
-})
+}, (t) => ({ userIdx: index('refresh_tokens_user_idx').on(t.userId) }))
 
 export const socialAccounts = mysqlTable('social_accounts', {
   id: varchar('id', { length: 36 }).primaryKey(),
@@ -105,7 +105,7 @@ export const sessions = mysqlTable('sessions', {
   expiresAt: datetime('expires_at').notNull(),
   revokedAt: datetime('revoked_at'),
   createdAt: datetime('created_at').notNull(),
-})
+}, (t) => ({ userIdx: index('sessions_user_idx').on(t.userId) }))
 
 export const authorizationCodes = mysqlTable('authorization_codes', {
   id: varchar('id', { length: 36 }).primaryKey(),

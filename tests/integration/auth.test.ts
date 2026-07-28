@@ -72,6 +72,28 @@ Deno.test('refresh rotation + revoke', async () => {
   assertEquals(reuse.status, 401)
 })
 
+Deno.test('deleting the user revokes its in-flight access token', async () => {
+  const { app, orgRepo, userRepo } = makeTestApp()
+  const userId = await register(app)
+  const audience = await seedDefaultService(orgRepo, userId)
+  const { Authorization } = await authHeader(
+    app,
+    'a@b.com',
+    'pw123456',
+    audience,
+  )
+  assertEquals(
+    (await app.request('/users/me', { headers: { Authorization } })).status,
+    200,
+  )
+
+  await userRepo.delete(userId)
+  assertEquals(
+    (await app.request('/users/me', { headers: { Authorization } })).status,
+    401,
+  )
+})
+
 Deno.test('/users/me without token -> 401', async () => {
   const { app } = makeTestApp()
   const res = await app.request('/users/me')

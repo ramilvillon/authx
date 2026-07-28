@@ -31,7 +31,12 @@ function setup() {
     findByProviderAccount: () => Promise.resolve(null),
     link: () => Promise.resolve(),
   }
-  const userService = createUserService({ repo: userRepo })
+  const sessionRepo = createInMemorySessionRepository()
+  const userService = createUserService({
+    repo: userRepo,
+    tokenRepo,
+    sessionRepo,
+  })
   const authService = createAuthService({
     userRepo,
     tokenRepo,
@@ -40,7 +45,7 @@ function setup() {
     rbacRepo,
     config,
     keySet,
-    sessionRepo: createInMemorySessionRepository(),
+    sessionRepo,
     authCodeRepo: createInMemoryAuthCodeRepository(),
   })
   return { authService, userService, orgRepo, rbacRepo }
@@ -107,6 +112,24 @@ Deno.test('refresh grant rotates the refresh token', async () => {
   const first = await authService.passwordGrant('a@b.com', 'pw123456', audience)
   const second = await authService.refreshGrant(first.refresh_token)
   assert(second.refresh_token !== first.refresh_token)
+})
+
+Deno.test('refresh grant stops working once the user is removed from the org', async () => {
+  const { authService, userService, orgRepo } = setup()
+  const user = await userService.register({
+    email: 'a@b.com',
+    password: 'pw123456',
+  })
+  const audience = await seedService(orgRepo, user.id)
+  const first = await authService.passwordGrant('a@b.com', 'pw123456', audience)
+
+  await orgRepo.removeMember(user.id, 'o1')
+
+  await assertRejects(
+    () => authService.refreshGrant(first.refresh_token),
+    Error,
+    'not a member of this organization',
+  )
 })
 
 Deno.test('reusing a rotated refresh token revokes the whole family', async () => {

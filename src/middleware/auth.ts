@@ -24,6 +24,11 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   // Authorization is carried by the token's scope claim, not a DB role lookup;
   // email is the only thing we fetch (and only if the subject still exists).
   const user = await c.var.userService.getById(claims.sub).catch(() => null)
+  // A token whose subject is a user stays valid only while that user exists, so
+  // deleting an account revokes its in-flight access tokens. Client-credentials
+  // tokens say sub_type 'service' (`sub` is an app-service id) and tokens minted
+  // before this claim existed say nothing — neither requires a user row.
+  if (claims.sub_type === 'user' && !user) throw AppError.of('invalid_token')
   c.set('user', {
     id: claims.sub,
     email: user?.email ?? '',

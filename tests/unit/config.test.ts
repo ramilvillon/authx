@@ -72,6 +72,24 @@ Deno.test('loadConfig parses JWT_PREVIOUS_PUBLIC_KEYS (defaults to [])', () => {
   )
 })
 
+Deno.test('loadConfig parses TRUST_PROXY as a hop count', () => {
+  assertEquals(loadConfig(base).trustProxyHops, 0)
+  assertEquals(loadConfig({ ...base, TRUST_PROXY: '2' }).trustProxyHops, 2)
+  // legacy booleans stay accepted
+  assertEquals(loadConfig({ ...base, TRUST_PROXY: 'false' }).trustProxyHops, 0)
+  assertEquals(loadConfig({ ...base, TRUST_PROXY: 'true' }).trustProxyHops, 1)
+  assertThrows(
+    () => loadConfig({ ...base, TRUST_PROXY: '-1' }),
+    Error,
+    'TRUST_PROXY',
+  )
+  assertThrows(
+    () => loadConfig({ ...base, TRUST_PROXY: 'yes' }),
+    Error,
+    'TRUST_PROXY',
+  )
+})
+
 Deno.test('loadConfig defaults EMAIL_VERIFICATION_TTL', () => {
   const cfg = loadConfig({
     DB_USER: 'app',

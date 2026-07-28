@@ -78,7 +78,7 @@ export function makeTestDeps(): TestContext {
     config,
     keySet,
     rateStore: createMemoryRateLimitStore(),
-    userService: createUserService({ repo: userRepo }),
+    userService: createUserService({ repo: userRepo, tokenRepo, sessionRepo }),
     authService: createAuthService({
       userRepo,
       tokenRepo,

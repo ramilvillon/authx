@@ -47,11 +47,28 @@ export function createAuthService(deps: {
     return dummyHash
   }
 
+  // Deleting a user removes only the users row; its refresh tokens, sessions,
+  // social links and role rows survive. So the users row is the authority:
+  // every path that mints or accepts a credential checks the subject exists.
+  // One primary-key read, so a deletion costs nothing on the write path.
+  async function subjectExists(userId: string): Promise<boolean> {
+    return (await userRepo.findById(userId)) !== null
+  }
+
+  async function activeSession(sessionToken: string) {
+    const session = await sessionRepo.findActiveByTokenHash(
+      await hashToken(sessionToken),
+    )
+    if (!session || !(await subjectExists(session.userId))) return null
+    return session
+  }
+
   async function issueTokensForService(
     userId: string,
     audience: string,
     oidcScope?: string,
   ): Promise<TokenPair> {
+    if (!(await subjectExists(userId))) throw AppError.of('invalid_grant')
     const service = await orgRepo.findServiceByAudience(audience)
     if (!service) throw AppError.of('unknown_audience')
     if (!(await orgRepo.isMember(userId, service.orgId))) {
@@ -72,6 +89,7 @@ export function createAuthService(deps: {
       scope: scopes.join(' '),
       clientId: service.clientId,
       oidcScope,
+      subType: 'user',
     })
     const refresh = generateRefreshToken()
     await tokenRepo.create({
@@ -117,9 +135,19 @@ export function createAuthService(deps: {
         throw AppError.of('refresh_token_reuse')
       }
       if (isExpired) throw AppError.of('invalid_refresh_token')
+      // A deleted subject's surviving tokens mint nothing.
+      if (!(await subjectExists(existing.userId))) {
+        throw AppError.of('invalid_refresh_token')
+      }
 
       const service = await orgRepo.findServiceById(existing.appServiceId)
       if (!service) throw AppError.of('invalid_refresh_token')
+      // Re-check membership on every rotation, exactly as issueTokensForService
+      // does at first issue: removing a member is the revocation control, and
+      // without this a removed user could keep rotating forever.
+      if (!(await orgRepo.isMember(existing.userId, service.orgId))) {
+        throw AppError.of('not_org_member')
+      }
       const scopes = await rbacRepo.permissionsForUserInService(
         existing.userId,
         service.id,
@@ -144,6 +172,7 @@ export function createAuthService(deps: {
         org: service.orgId,
         scope: scopes.join(' '),
         clientId: service.clientId,
+        subType: 'user',
       })
       // Atomic rotation; a false result means a concurrent rotation already
       // consumed this token (replay), so revoke the family and reject.
@@ -234,17 +263,12 @@ export function createAuthService(deps: {
       return service
     },
     async userIdForSession(sessionToken: string): Promise<string | null> {
-      const session = await sessionRepo.findActiveByTokenHash(
-        await hashToken(sessionToken),
-      )
-      return session?.userId ?? null
+      return (await activeSession(sessionToken))?.userId ?? null
     },
     async resolveSession(
       sessionToken: string,
     ): Promise<{ userId: string; authTime: Date } | null> {
-      const session = await sessionRepo.findActiveByTokenHash(
-        await hashToken(sessionToken),
-      )
+      const session = await activeSession(sessionToken)
       return session
         ? { userId: session.userId, authTime: session.createdAt }
         : null
@@ -403,6 +427,8 @@ export function createAuthService(deps: {
         org: target.orgId,
         scope: scopes.join(' '),
         clientId: requesting.clientId,
+        // `sub` is the calling app service, not a user.
+        subType: 'service',
       })
       return {
         access_token,

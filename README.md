@@ -84,18 +84,27 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                        |
 | `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation          |
 | `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin |
-| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; password for the bootstrap admin                         |
+| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused  |
 | `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                    |
 | `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                   |
 | `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                     |
 | `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                              |
 | `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                         |
+| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address |
 | `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                             |
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                         |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                               |
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                              |
 | `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                 |
-| `TRUST_PROXY`              | `false`                              | set `true` only behind a trusted proxy (honors `X-Forwarded-For`)  |
+| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`        |
+
+`TRUST_PROXY` must be the **exact** number of reverse proxies in front of this
+service (`2` behind Cloudflare -> nginx, `0` when directly exposed). Proxies
+append to `X-Forwarded-For`, so the client IP for rate limiting is read that
+many entries from the right and everything to the left — which the caller can
+forge — is ignored. Too low a count shares one rate-limit bucket between
+clients; too high a count lets a caller pick its own bucket. Legacy
+`true`/`false` still parse as `1`/`0`, and `true` logs a startup warning.
 
 ### Google OAuth
 
@@ -137,6 +146,11 @@ are rejected.
 string); the returned access token then carries exactly the permissions that
 user has in that service. Omit it for the default audience.
 
+Permission keys are defined per service, so the `users:*` permissions above
+count only on a token minted for the reserved `platform` audience — the same key
+granted inside a tenant service authorizes nothing on `/users`. Acting on your
+own record (self) works with a token for any audience.
+
 ### Management API
 
 These routes require a Bearer token minted for the reserved `platform` audience
@@ -159,8 +173,10 @@ These routes require a Bearer token minted for the reserved `platform` audience
 
 Setting `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` before
 `deno task
-db:seed` creates that user as a platform `admin`. Get an admin token
-with a password grant for `audience: "platform"`.
+db:seed` creates that user as a platform `admin`. Both are empty in
+`.env.example`, so pick your own values; `db:seed` aborts if the password is
+still the `change-me-please` placeholder older templates shipped. Get an admin
+token with a password grant for `audience: "platform"`.
 
 Example password-grant flow:
 
@@ -223,10 +239,12 @@ is surfaced in both the id_token and the UserInfo response.
 
 ### Email verification
 
-Registration triggers a verification email. The default `EmailSender` logs the
-link to stdout; implement `EmailSender` in `src/lib/email.ts` for real
-SMTP/webhook delivery. Clicking the link sets `email_verified: true`, which is
-surfaced in the OIDC id_token and UserInfo endpoint. The resend endpoint
+Registration triggers a verification email. The default `EmailSender` only
+records that a mail was sent — the link embeds a live verification token and is
+never logged unless you set `EMAIL_LOG_LINKS=true` in your `.env` for local
+development. Implement `EmailSender` in `src/lib/email.ts` for real SMTP/webhook
+delivery. Clicking the link sets `email_verified: true`, which is surfaced in
+the OIDC id_token and UserInfo endpoint. The resend endpoint
 (`POST /verify-email/resend`) is anti-enumeration — it always returns 204
 regardless of whether the address exists or is already verified. Changing a
 user's email resets `email_verified` to false. Verification is non-blocking: it

@@ -4,6 +4,8 @@ import type {
   RegisterInput,
   UpdateUserInput,
 } from './users.schema.ts'
+import type { RefreshTokenRepository } from '../auth/token.repository.ts'
+import type { SessionRepository } from '../auth/session.repository.ts'
 import { hashPassword } from '../../lib/password.ts'
 import { AppError } from '../../lib/errors.ts'
 
@@ -13,8 +15,12 @@ function toPublic(u: UserRecord): PublicUser {
   return { id: u.id, email: u.email, createdAt: u.createdAt }
 }
 
-export function createUserService(deps: { repo: UserRepository }) {
-  const { repo } = deps
+export function createUserService(deps: {
+  repo: UserRepository
+  tokenRepo: RefreshTokenRepository
+  sessionRepo: SessionRepository
+}) {
+  const { repo, tokenRepo, sessionRepo } = deps
   return {
     async register(input: RegisterInput): Promise<PublicUser> {
       if (await repo.findByEmail(input.email)) {
@@ -65,6 +71,13 @@ export function createUserService(deps: { repo: UserRepository }) {
       }
       const u = await repo.update(id, patch)
       if (!u) throw AppError.of('user_not_found')
+      // Credentials issued under the old password must not outlive it. Revoke
+      // after the hash is stored, so the old password can no longer mint a
+      // replacement in between.
+      if (patch.passwordHash) {
+        await tokenRepo.revokeAllForUser(id)
+        await sessionRepo.revokeAllForUser(id)
+      }
       return toPublic(u)
     },
     async remove(id: string): Promise<void> {

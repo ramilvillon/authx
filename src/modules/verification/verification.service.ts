@@ -52,12 +52,20 @@ export function createVerificationService(deps: {
       if (!(await verificationRepo.consume(record.id))) {
         throw AppError.of('invalid_verification_link')
       }
-      await userRepo.update(user.id, { emailVerified: true })
+      // Compare-and-set on the address the token was issued for: the check
+      // above is not atomic with this write, so a concurrent email change must
+      // lose here rather than get emailVerified stamped onto its new address.
+      if (!(await userRepo.markEmailVerified(user.id, record.email))) {
+        throw AppError.of('invalid_verification_link')
+      }
     },
     async resend(email: string): Promise<void> {
       const user = await userRepo.findByEmail(email)
       if (!user || user.emailVerified) return
-      await startVerification(user.id, email)
+      // Bind the token to (and mail it to) the stored address, not the request
+      // string: the DB lookup is collation-insensitive but verifyEmail compares
+      // with `!==`, so echoing the caller's casing yields a permanently dead link.
+      await startVerification(user.id, user.email)
     },
   }
 }

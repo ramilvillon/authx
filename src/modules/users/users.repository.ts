@@ -36,6 +36,9 @@ export type UserRepository = {
       >
     >,
   ): Promise<UserRecord | null>
+  // Compare-and-set: sets emailVerified only while the row still holds `email`.
+  // false = the address changed since it was checked, so nothing was verified.
+  markEmailVerified(id: string, email: string): Promise<boolean>
   delete(id: string): Promise<boolean>
   list(): Promise<UserRecord[]>
   assignRole(userId: string, roleName: string): Promise<void>
@@ -84,6 +87,12 @@ export function createInMemoryUserRepository(
       const next = { ...u, ...patch, updatedAt: new Date() }
       byId.set(id, next)
       return Promise.resolve({ ...next })
+    },
+    markEmailVerified(id, email) {
+      const u = byId.get(id)
+      if (!u || u.email !== email) return Promise.resolve(false)
+      byId.set(id, { ...u, emailVerified: true, updatedAt: new Date() })
+      return Promise.resolve(true)
     },
     delete(id) {
       return Promise.resolve(byId.delete(id))

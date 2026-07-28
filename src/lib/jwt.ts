@@ -13,6 +13,9 @@ export type AccessClaims = AccessPayload & {
   scope: string
   client_id: string
   oidc_scope?: string
+  // What `sub` identifies: a user row ('user') or an app service ('service',
+  // client-credentials). Absent on tokens minted before this claim existed.
+  sub_type?: 'user' | 'service'
 }
 
 export async function signAccessToken(
@@ -27,6 +30,7 @@ export async function signAccessToken(
     scope: string
     clientId: string
     oidcScope?: string
+    subType?: 'user' | 'service'
   },
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -38,6 +42,7 @@ export async function signAccessToken(
     scope: opts.scope,
     client_id: opts.clientId,
     ...(opts.oidcScope ? { oidc_scope: opts.oidcScope } : {}),
+    ...(opts.subType ? { sub_type: opts.subType } : {}),
     iat: now,
     exp: now + opts.ttlSeconds,
   }

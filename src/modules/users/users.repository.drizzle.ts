@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import {
   permissions,
@@ -59,6 +59,14 @@ export function createDrizzleUserRepository(db: Database): UserRepository {
         eq(users.id, id),
       )
       return findById(id)
+    },
+    async markEmailVerified(id, email) {
+      const [res] = await db.update(users)
+        .set({ emailVerified: true, updatedAt: new Date() })
+        .where(and(eq(users.id, id), eq(users.email, email)))
+      // affectedRows counts rows MATCHED (mysql2 connects with FOUND_ROWS), so
+      // re-verifying an already-verified row still reports 1.
+      return (res as { affectedRows: number }).affectedRows === 1
     },
     async delete(id) {
       const [res] = await db.delete(users).where(eq(users.id, id))

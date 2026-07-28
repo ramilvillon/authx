@@ -20,8 +20,34 @@ import {
 } from './rbac-constants.ts'
 import { hashPassword } from '../lib/password.ts'
 
+// The password `.env.example` used to ship. A `.env` copied from that template
+// would seed a platform admin whose password is public, so refuse it.
+const SHIPPED_PLACEHOLDER_PASSWORD = 'change-me-please'
+
+// Returns the bootstrap admin credentials, or null when either half is unset
+// (step 5 below is skipped, exactly as before). Throws only for the pair that
+// would create an admin with the shipped placeholder password.
+export function bootstrapAdminFromEnv(
+  email: string | undefined,
+  password: string | undefined,
+): { email: string; password: string } | null {
+  if (!email || !password) return null
+  if (password === SHIPPED_PLACEHOLDER_PASSWORD) {
+    throw new Error(
+      'BOOTSTRAP_ADMIN_PASSWORD is the placeholder from the old .env.example. ' +
+        'Set a real password, or clear BOOTSTRAP_ADMIN_EMAIL/BOOTSTRAP_ADMIN_PASSWORD to skip the bootstrap admin.',
+    )
+  }
+  return { email, password }
+}
+
 // Idempotent: find-or-insert each row so re-running is safe.
 async function seed() {
+  // Checked before connecting so a stale template never reaches step 5.
+  const admin = bootstrapAdminFromEnv(
+    Deno.env.get('BOOTSTRAP_ADMIN_EMAIL'),
+    Deno.env.get('BOOTSTRAP_ADMIN_PASSWORD'),
+  )
   const config = loadConfig(Deno.env.toObject())
   const { db, pool } = createDb(config)
   const now = new Date()
@@ -111,9 +137,8 @@ async function seed() {
   }
 
   // 5. bootstrap admin user from env (optional)
-  const adminEmail = Deno.env.get('BOOTSTRAP_ADMIN_EMAIL')
-  const adminPassword = Deno.env.get('BOOTSTRAP_ADMIN_PASSWORD')
-  if (adminEmail && adminPassword) {
+  if (admin) {
+    const { email: adminEmail, password: adminPassword } = admin
     let user = await db.query.users.findFirst({
       where: eq(users.email, adminEmail),
     })
