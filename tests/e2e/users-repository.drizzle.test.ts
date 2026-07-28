@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assert, assertEquals } from '@std/assert'
 import { loadConfig } from '../../src/config.ts'
 import { createDb } from '../../src/db/client.ts'
 import { createDrizzleUserRepository } from '../../src/modules/users/users.repository.drizzle.ts'
@@ -23,6 +23,36 @@ Deno.test({
     await repo.assignRole(id, 'user')
     const access = await repo.findWithAccessById(id)
     assertEquals(access?.roles, ['user'])
+    await repo.delete(id)
+    await pool.end()
+  },
+})
+
+Deno.test({
+  name: 'drizzle markEmailVerified is a compare-and-set on (id, email)',
+  ignore: !hasDb,
+  fn: async () => {
+    const { db, pool } = createDb(loadConfig(Deno.env.toObject()))
+    const repo = createDrizzleUserRepository(db)
+    const id = crypto.randomUUID()
+    const email = `${id}@b.com`
+    const now = new Date()
+    await repo.create({
+      id,
+      email,
+      passwordHash: 'h',
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    assert(await repo.markEmailVerified(id, email))
+    // Twice in a row: the second call changes no columns, so it only reports
+    // true while affectedRows counts rows matched rather than rows changed.
+    assert(await repo.markEmailVerified(id, email))
+    assertEquals((await repo.findById(id))?.emailVerified, true)
+    // The address the token was issued for is gone -> nothing is verified.
+    assert(!(await repo.markEmailVerified(id, `other-${email}`)))
+
     await repo.delete(id)
     await pool.end()
   },

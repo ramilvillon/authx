@@ -4,6 +4,7 @@ import {
   grantPermissions,
   makeTestApp,
   seedDefaultService,
+  seedPlatformAdmin,
 } from '../helpers.ts'
 
 async function registerAndId(
@@ -34,7 +35,18 @@ Deno.test('non-admin cannot list users', async () => {
   )
 })
 
-Deno.test('admin can list users', async () => {
+Deno.test('platform admin can list users', async () => {
+  const { app } = makeTestApp()
+  const Authorization = `Bearer ${await seedPlatformAdmin(['users:list'])}`
+  assertEquals(
+    (await app.request('/users', { headers: { Authorization } })).status,
+    200,
+  )
+})
+
+// Permission keys are per-service, so the same key defined inside a tenant
+// service must not authorize the platform-global user directory.
+Deno.test('tenant-service token with users:list cannot list users', async () => {
   const { app, orgRepo, rbacRepo } = makeTestApp()
   const id = await registerAndId(app, 'admin@b.com')
   const audience = await seedDefaultService(orgRepo, id)
@@ -47,11 +59,11 @@ Deno.test('admin can list users', async () => {
   )
   assertEquals(
     (await app.request('/users', { headers: { Authorization } })).status,
-    200,
+    403,
   )
 })
 
-Deno.test('user can read self but not others; admin can read others', async () => {
+Deno.test('user can read self but not others; only a platform admin reads others', async () => {
   const { app, orgRepo, rbacRepo } = makeTestApp()
   const aId = await registerAndId(app, 'a@b.com')
   const bId = await registerAndId(app, 'b@b.com')
@@ -70,11 +82,20 @@ Deno.test('user can read self but not others; admin can read others', async () =
     403,
   )
 
+  // users:read:any granted inside the tenant service stays powerless here.
   await grantPermissions(orgRepo, rbacRepo, audience, aId, ['users:read:any'])
   const aAdmin = await authHeader(app, 'a@b.com', 'pw123456', audience)
   assertEquals(
     (await app.request(`/users/${bId}`, {
       headers: { Authorization: aAdmin.Authorization },
+    })).status,
+    403,
+  )
+
+  const platform = `Bearer ${await seedPlatformAdmin(['users:read:any'])}`
+  assertEquals(
+    (await app.request(`/users/${bId}`, {
+      headers: { Authorization: platform },
     })).status,
     200,
   )

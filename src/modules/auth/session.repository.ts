@@ -17,6 +17,7 @@ export type SessionRepository = {
   // Active = exists, not revoked, not expired. Returns null otherwise.
   findActiveByTokenHash(tokenHash: string): Promise<SessionRecord | null>
   revoke(id: string): Promise<void>
+  revokeAllForUser(userId: string): Promise<void>
 }
 
 // In-memory test double. Mirror behavior in session.repository.drizzle.ts.
@@ -39,6 +40,12 @@ export function createInMemorySessionRepository(): SessionRepository {
     revoke(id) {
       const s = byId.get(id)
       if (s) byId.set(id, { ...s, revokedAt: new Date() })
+      return Promise.resolve()
+    },
+    revokeAllForUser(userId) {
+      for (const [id, s] of byId) {
+        if (s.userId === userId) byId.set(id, { ...s, revokedAt: new Date() })
+      }
       return Promise.resolve()
     },
   }

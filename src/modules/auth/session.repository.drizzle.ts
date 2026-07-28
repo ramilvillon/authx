@@ -25,5 +25,10 @@ export function createDrizzleSessionRepository(
         eq(sessions.id, id),
       )
     },
+    async revokeAllForUser(userId) {
+      await db.update(sessions).set({ revokedAt: new Date() }).where(
+        eq(sessions.userId, userId),
+      )
+    },
   }
 }
