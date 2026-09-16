@@ -231,13 +231,16 @@ export function createAuthService(deps: {
         return issueTokensForService(created.id, audience)
       }
 
-      if (user.passwordHash !== null) {
-        // Pre-hijacking guard: a local account with a password must prove
-        // ownership via password login before linking a social provider.
+      if (user.passwordHash !== null || !user.emailVerified) {
+        // Pre-hijacking guard: a local account must prove ownership before a
+        // social provider is linked to it — via password login if it has a
+        // password, or by verifying its email if it does not. Same error for
+        // both so the response does not reveal which.
         throw AppError.of('account_exists_link_password')
       }
 
-      // Passwordless user (e.g., invite-created): safe to link.
+      // Passwordless *and* verified: the email challenge already proved
+      // ownership, so linking is safe.
       await deps.socialRepo.link({
         id: crypto.randomUUID(),
         userId: user.id,
