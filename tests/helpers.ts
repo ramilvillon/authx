@@ -41,8 +41,10 @@ export type TestContext = {
   sentEmails: { to: string; link: string }[]
 }
 
-export function makeTestDeps(): TestContext {
-  const config = loadConfig(testEnv)
+export function makeTestDeps(
+  envOverrides: Record<string, string> = {},
+): TestContext {
+  const config = loadConfig({ ...testEnv, ...envOverrides })
   const userRepo = createInMemoryUserRepository()
   const tokenRepo = createInMemoryRefreshTokenRepository()
   const orgRepo = createInMemoryOrgRepository()
@@ -96,9 +98,17 @@ export function makeTestDeps(): TestContext {
   return { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails }
 }
 
-export function makeTestApp() {
-  const { deps, userRepo, orgRepo, rbacRepo, sentEmails } = makeTestDeps()
-  return { app: createApp(deps), userRepo, orgRepo, rbacRepo, sentEmails }
+export function makeTestApp(envOverrides: Record<string, string> = {}) {
+  const { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails } =
+    makeTestDeps(envOverrides)
+  return {
+    app: createApp(deps),
+    userRepo,
+    socialRepo,
+    orgRepo,
+    rbacRepo,
+    sentEmails,
+  }
 }
 
 // Seeds a default org + service and adds userId as a member.

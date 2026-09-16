@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from '@std/assert'
-import { loadConfig } from '../../src/config.ts'
+import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import { insecureGoogleRedirectWarning, loadConfig } from '../../src/config.ts'
 
 const base = {
   PORT: '3000',
@@ -99,4 +99,30 @@ Deno.test('loadConfig defaults EMAIL_VERIFICATION_TTL', () => {
     JWT_ISSUER: 'http://t',
   })
   assertEquals(cfg.emailVerificationTtl, 86400)
+})
+
+Deno.test('insecureGoogleRedirectWarning flags only plain-http non-localhost redirect URIs', () => {
+  // Fine: https anywhere, and the two hosts browsers treat as trustworthy.
+  for (
+    const ok of [
+      '',
+      'https://authx.example.com/oauth/google',
+      'http://localhost:3000/oauth/google',
+      'http://127.0.0.1:3000/oauth/google',
+    ]
+  ) {
+    assertEquals(insecureGoogleRedirectWarning(ok), null, ok)
+  }
+
+  // Broken: the browser drops the Secure state cookie, so every callback 401s.
+  const warning = insecureGoogleRedirectWarning(
+    'http://staging.internal/oauth/google',
+  )
+  assertStringIncludes(warning ?? '', 'staging.internal')
+  assertStringIncludes(warning ?? '', '401')
+
+  assertStringIncludes(
+    insecureGoogleRedirectWarning('not-a-url') ?? '',
+    'not a valid URL',
+  )
 })
