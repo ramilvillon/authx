@@ -22,11 +22,12 @@ Deno.test('loginWithGoogle new user: creates user + links account, throws unknow
 Deno.test('loginWithGoogle links and issues tokens for a passwordless invited user who is a member', async () => {
   const { deps, userRepo, orgRepo } = makeTestDeps()
   const now = new Date()
-  // Simulate an invite-created user (no password).
+  // Simulate an invite-created user (no password) who verified their email.
   const invited = await userRepo.create({
     id: crypto.randomUUID(),
     email: 'invited@b.com',
     passwordHash: null,
+    emailVerified: true,
     createdAt: now,
     updatedAt: now,
   })
@@ -42,11 +43,12 @@ Deno.test('loginWithGoogle links and issues tokens for a passwordless invited us
 Deno.test('loginWithGoogle is idempotent for the same google account', async () => {
   const { deps, userRepo, orgRepo } = makeTestDeps()
   const now = new Date()
-  // Pre-create a passwordless user and add them to an org.
+  // Pre-create a passwordless, verified user and add them to an org.
   const invited = await userRepo.create({
     id: crypto.randomUUID(),
     email: 'g@b.com',
     passwordHash: null,
+    emailVerified: true,
     createdAt: now,
     updatedAt: now,
   })
@@ -76,6 +78,35 @@ Deno.test('loginWithGoogle refuses an unverified email', async () => {
       }, 'test-app'),
     Error,
     'not verified',
+  )
+})
+
+Deno.test('loginWithGoogle refuses to link a passwordless account whose email is unverified', async () => {
+  const { deps, userRepo, socialRepo } = makeTestDeps()
+  const now = new Date()
+  // Attacker pre-seeds an unverified account on the victim's address; the
+  // victim's Google login must not adopt it.
+  await userRepo.create({
+    id: crypto.randomUUID(),
+    email: 'victim@b.com',
+    passwordHash: null,
+    emailVerified: false,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await assertRejects(
+    () =>
+      deps.authService.loginWithGoogle({
+        providerAccountId: 'g-attacker-2',
+        email: 'victim@b.com',
+        emailVerified: true,
+      }, 'test-app'),
+    Error,
+    'already exists',
+  )
+  assertEquals(
+    await socialRepo.findByProviderAccount('google', 'g-attacker-2'),
+    null,
   )
 })
 
