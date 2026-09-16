@@ -1,7 +1,7 @@
 import { createApp } from './app.ts'
 import { createDeps } from './deps.ts'
 import { createDb } from './db/client.ts'
-import { loadConfig } from './config.ts'
+import { insecureGoogleRedirectWarning, loadConfig } from './config.ts'
 import { createLogger } from './lib/logger.ts'
 
 const config = loadConfig(Deno.env.toObject())
@@ -20,6 +20,11 @@ if (Deno.env.get('TRUST_PROXY') === 'true') {
       'clients spoof their own bucket via X-Forwarded-For.',
   )
 }
+
+const googleRedirectWarning = insecureGoogleRedirectWarning(
+  config.google.redirectUri,
+)
+if (googleRedirectWarning) createLogger(config).warn(googleRedirectWarning)
 
 const { db } = createDb(config)
 const deps = await createDeps(config, db)

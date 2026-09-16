@@ -61,7 +61,18 @@ Deno.test('GET /oauth/google without a code redirects to Google carrying a state
   assertStringIncludes(location, 'https://accounts.google.com/o/oauth2/v2/auth')
   const state = new URL(location).searchParams.get('state')
   assert(state, 'the consent redirect must carry a state param')
-  assertStringIncludes(cookieHeader(res), `state=${state}`)
+
+  const [stateCookie] = res.headers.getSetCookie()
+  assertStringIncludes(stateCookie, `state=${state}`)
+  assertStringIncludes(stateCookie, 'HttpOnly')
+  // `Secure` is the library's, not ours, and it is load-bearing in a direction
+  // that bites: browsers drop a Secure cookie on a plain-http origin unless the
+  // host is localhost, and then every callback 401s with no state cookie to
+  // match. `insecureGoogleRedirectWarning` says so at startup; this pins the
+  // attribute that makes the warning necessary, so a library change is visible
+  // here rather than in production. Nothing server-side varies by scheme, so
+  // the drop itself can only be observed in a real browser.
+  assertStringIncludes(stateCookie, 'Secure')
 })
 
 Deno.test('GET /oauth/google refuses a callback that carries no state at all', async () => {

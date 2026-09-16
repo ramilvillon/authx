@@ -127,3 +127,29 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     trustProxyHops: e.TRUST_PROXY,
   }
 }
+
+// The `state` cookie that guards the Google callback against CSRF is set with
+// `Secure` by @hono/oauth-providers, and browsers drop a Secure cookie on a
+// non-secure origin — except localhost and 127.0.0.1, which count as
+// trustworthy. On any other plain-http host the cookie never comes back, and
+// every callback 401s with nothing in the logs pointing at the cause. (Google
+// itself also refuses to register a non-localhost http redirect URI, so this
+// config cannot work against real Google either.) Returns the warning text, or
+// null when the redirect URI is fine or unset.
+export function insecureGoogleRedirectWarning(
+  redirectUri: string,
+): string | null {
+  if (!redirectUri) return null
+  let url: URL
+  try {
+    url = new URL(redirectUri)
+  } catch {
+    return `GOOGLE_REDIRECT_URI is not a valid URL: ${redirectUri}`
+  }
+  if (url.protocol !== 'http:') return null
+  if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return null
+  return `GOOGLE_REDIRECT_URI is plain http on a non-localhost host (${url.host}), ` +
+    'so the browser will drop the Secure `state` cookie and every Google ' +
+    'callback will fail with 401. Serve this over https (Google requires it ' +
+    'for non-localhost redirect URIs anyway).'
+}
