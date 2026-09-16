@@ -4,7 +4,7 @@
     "jsr:@std/assert@^1.0.8": "1.0.19",
     "jsr:@std/encoding@^1.0.5": "1.0.11",
     "jsr:@std/internal@^1.0.12": "1.0.14",
-    "npm:@hono/oauth-providers@~0.6.2": "0.6.2_hono@4.13.8",
+    "npm:@hono/oauth-providers@0.9": "0.9.0_hono@4.13.8",
     "npm:@hono/zod-validator@~0.4.1": "0.4.3_hono@4.13.8_zod@3.25.76",
     "npm:@scalar/hono-api-reference@~0.5.165": "0.5.184_hono@4.13.8",
     "npm:bcryptjs@^2.4.3": "2.4.3",
@@ -434,8 +434,8 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@hono/oauth-providers@0.6.2_hono@4.13.8": {
-      "integrity": "sha512-Uo2Lf+GnaPGebkC4GUQMRD9spIKonav/gWwSapEJhCKQjq1WVxTLIlCykNRhJtcizPCPc6OAV3A9RAYk0kX9XQ==",
+    "@hono/oauth-providers@0.9.0_hono@4.13.8": {
+      "integrity": "sha512-OgDPB+AM6OgA5ys1y+7G24bkb8V4OINr+6JFDSuSYni80Mmd7BGpJ0e02StQDMPL9ebuWI8ABhxx1bk+9VBcBA==",
       "dependencies": [
         "hono"
       ]
@@ -916,7 +916,7 @@
     "dependencies": [
       "jsr:@std/assert@^1.0.8",
       "jsr:@std/encoding@^1.0.5",
-      "npm:@hono/oauth-providers@~0.6.2",
+      "npm:@hono/oauth-providers@0.9",
       "npm:@hono/zod-validator@~0.4.1",
       "npm:@scalar/hono-api-reference@~0.5.165",
       "npm:bcryptjs@^2.4.3",
