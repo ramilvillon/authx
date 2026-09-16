@@ -47,7 +47,13 @@ Deno.test('update persists OIDC profile fields; email_verified is NOT client-set
     createdAt: now,
     updatedAt: now,
   })
-  await svc.update('u1', { name: 'Ada L', given_name: 'Ada', family_name: 'L' })
+  await svc.update(
+    'u1',
+    { name: 'Ada L', given_name: 'Ada', family_name: 'L' },
+    {
+      requireCurrentPassword: true,
+    },
+  )
   const rec = await repo.findById('u1')
   assertEquals(rec?.name, 'Ada L')
   assertEquals(rec?.givenName, 'Ada')
@@ -90,7 +96,11 @@ Deno.test("changing the password revokes the user's refresh tokens and sessions"
     })
   }
 
-  await svc.update('u1', { password: 'newpw12345' })
+  // Operator path: the challenge is exercised in the route tests; this one is
+  // about revocation, which fires the same either way.
+  await svc.update('u1', { password: 'newpw12345' }, {
+    requireCurrentPassword: false,
+  })
 
   assertEquals(!!(await tokenRepo.findByHash('rt-hash-u1'))?.revokedAt, true)
   assertEquals(await sessionRepo.findActiveByTokenHash('se-hash-u1'), null)
@@ -119,7 +129,7 @@ Deno.test('updating a non-password field leaves credentials alone', async () => 
     tokenHash: 'rt-hash',
     expiresAt: new Date(Date.now() + 60_000),
   })
-  await svc.update('u1', { name: 'Ada' })
+  await svc.update('u1', { name: 'Ada' }, { requireCurrentPassword: true })
   assertEquals(!!(await tokenRepo.findByHash('rt-hash'))?.revokedAt, false)
 })
 
@@ -155,6 +165,10 @@ Deno.test('changing email resets emailVerified to false', async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await svc.update('u1', { email: 'new@b.com' })
+  // Self-service: changing an email carries no password challenge, by design —
+  // revoking there would hand a stolen-token holder a mass-eviction primitive.
+  await svc.update('u1', { email: 'new@b.com' }, {
+    requireCurrentPassword: true,
+  })
   assertEquals((await repo.findById('u1'))?.emailVerified, false)
 })

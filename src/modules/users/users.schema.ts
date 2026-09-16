@@ -8,6 +8,7 @@ export const registerSchema = z.object({
 export const updateUserSchema = z.object({
   email: z.string().email().optional(),
   password: z.string().min(8).optional(),
+  current_password: z.string().optional(),
   name: z.string().max(255).optional(),
   given_name: z.string().max(255).optional(),
   family_name: z.string().max(255).optional(),
