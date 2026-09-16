@@ -8,6 +8,10 @@ export const ERRORS = {
   invalid_token: { status: 401, message: 'invalid token' },
   missing_bearer_token: { status: 401, message: 'missing bearer token' },
   invalid_credentials: { status: 401, message: 'invalid credentials' },
+  current_password_required: {
+    status: 400,
+    message: 'current_password is required to change a password',
+  },
   invalid_refresh_token: { status: 401, message: 'invalid refresh token' },
   refresh_token_reuse: { status: 401, message: 'refresh token reuse detected' },
   unknown_client_id: { status: 400, message: 'unknown client_id' },

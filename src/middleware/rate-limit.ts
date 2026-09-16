@@ -36,13 +36,22 @@ function clientKey(c: Context<AppEnv>): string {
 // per-endpoint one).
 export function makeRateLimiter(
   store: RateLimitStore,
-  opts: { windowMs: number; limit: number; prefix?: string },
+  opts: {
+    windowMs: number
+    limit: number
+    prefix?: string
+    // Narrows what the bucket counts. Without this a limiter charges every
+    // request, so ordinary use spends the budget that is meant to stop abuse.
+    countOnly?: (status: number) => boolean
+  },
 ) {
   const prefix = opts.prefix ?? 'global'
   return rateLimiter<AppEnv>({
     windowMs: opts.windowMs,
     limit: opts.limit,
     standardHeaders: 'draft-6',
+    skipSuccessfulRequests: opts.countOnly !== undefined,
+    requestWasSuccessful: (c) => !opts.countOnly!(c.res.status),
     keyGenerator: (c) => `${prefix}:${clientKey(c)}`,
     // The store only ever sees string keys, so it is independent of the Hono
     // Env; cast past the invariant Env generic here at the commitment point.

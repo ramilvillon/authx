@@ -6,7 +6,7 @@ import type {
 } from './users.schema.ts'
 import type { RefreshTokenRepository } from '../auth/token.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
-import { hashPassword } from '../../lib/password.ts'
+import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { AppError } from '../../lib/errors.ts'
 
 export type UserService = ReturnType<typeof createUserService>
@@ -42,7 +42,14 @@ export function createUserService(deps: {
       if (!u) throw AppError.of('user_not_found')
       return toPublic(u)
     },
-    async update(id: string, input: UpdateUserInput): Promise<PublicUser> {
+    // `requireCurrentPassword` is not optional on purpose: every caller has to
+    // say which side of the trust boundary it is on, so a new one cannot skip
+    // the challenge by forgetting an argument.
+    async update(
+      id: string,
+      input: UpdateUserInput,
+      opts: { requireCurrentPassword: boolean },
+    ): Promise<PublicUser> {
       const current = await repo.findById(id)
       if (!current) throw AppError.of('user_not_found')
       const patch: Partial<
@@ -59,6 +66,25 @@ export function createUserService(deps: {
       > = {}
       if (input.email) patch.email = input.email
       if (input.password) {
+        // A bearer token says who you are, not that you know the password it
+        // was minted from. Without this challenge, anyone holding a stolen
+        // token takes the account permanently. An operator acting through
+        // users:update:any is exempt: they never know the password, and that
+        // path is the only way back into a passwordless account.
+        if (opts.requireCurrentPassword) {
+          if (!input.current_password) {
+            throw AppError.of('current_password_required')
+          }
+          // A null hash means there is nothing to prove against, so the owner's
+          // request and a stolen token's request are byte-identical. Refuse
+          // both rather than hand the account to whoever asks first.
+          if (
+            current.passwordHash === null ||
+            !await verifyPassword(input.current_password, current.passwordHash)
+          ) {
+            throw AppError.of('invalid_credentials')
+          }
+        }
         patch.passwordHash = await hashPassword(input.password)
       }
       if (input.name !== undefined) patch.name = input.name

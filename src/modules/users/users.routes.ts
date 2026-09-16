@@ -9,7 +9,9 @@ import {
   registerSchema,
   updateUserSchema,
 } from './users.schema.ts'
+import { createMiddleware } from 'hono/factory'
 import { requireAuth } from '../../middleware/auth.ts'
+import { makeRateLimiter } from '../../middleware/rate-limit.ts'
 import {
   requirePermission,
   requireSelfOrPermission,
@@ -26,6 +28,24 @@ const idParam: OpenAPIV3.ParameterObject = {
 const json = (schema: ReturnType<typeof resolver>) => ({
   'application/json': { schema },
 })
+
+// Throttles wrong `current_password` guesses. Registered *after* requireAuth on
+// purpose: clientKey falls back to the caller's IP when no user is set, so an
+// earlier registration would let unauthenticated requests with a junk bearer
+// token drain the bucket and lock the real owner out of their own password
+// change. After requireAuth the key is the authenticated user id, so the budget
+// belongs to the account being defended. Only a 401 counts, so ordinary profile
+// updates and malformed bodies never spend it.
+// ponytail: built per request because the store only exists on the context;
+// the limiter is cheap to construct and all its state lives in the store.
+const throttleFailedPasswordProofs = createMiddleware<AppEnv>((c, next) =>
+  makeRateLimiter(c.var.rateStore, {
+    windowMs: c.var.config.rateLimit.windowMs,
+    limit: 5,
+    prefix: 'password-proof',
+    countOnly: (status) => status === 401,
+  })(c, next)
+)
 
 const users = new Hono<AppEnv>()
   .post(
@@ -126,18 +146,32 @@ const users = new Hono<AppEnv>()
           description: 'The updated user',
           content: json(resolver(publicUserSchema)),
         },
-        400: { description: 'Invalid input' },
-        401: { description: 'Missing or invalid access token' },
+        400: {
+          description:
+            'Invalid input, or a self-service password change with no current_password',
+        },
+        401: {
+          description:
+            'Missing or invalid access token, or a wrong current_password',
+        },
         403: { description: 'Not the owner and missing users:update:any' },
         404: { description: 'User not found' },
+        429: { description: 'Too many failed current_password proofs' },
       },
     }),
     requireAuth,
     requireSelfOrPermission('id', 'users:update:any'),
+    throttleFailedPasswordProofs,
     validator('json', updateUserSchema),
     async (c) => {
+      const id = c.req.param('id')
       return c.json(
-        await c.var.userService.update(c.req.param('id'), c.req.valid('json')),
+        await c.var.userService.update(id, c.req.valid('json'), {
+          // Self-service is the only path where a password challenge is both
+          // possible and meaningful; reaching someone else's record already
+          // required users:update:any on a platform-audience token.
+          requireCurrentPassword: id === c.var.user.id,
+        }),
         200,
       )
     },
