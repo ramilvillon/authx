@@ -21,7 +21,7 @@ import {
 } from './modules/admin/admin.service.ts'
 import { type KeySet, loadKeyRing } from './lib/keys.ts'
 import { createLogger } from './lib/logger.ts'
-import { createLogEmailSender } from './lib/email.ts'
+import { createLogEmailSender, createSmtpEmailSender } from './lib/email.ts'
 import { createDrizzleVerificationTokenRepository } from './modules/verification/verification.repository.drizzle.ts'
 import {
   createVerificationService,
@@ -47,10 +47,12 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const sessionRepo = createDrizzleSessionRepository(db)
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
   const verificationRepo = createDrizzleVerificationTokenRepository(db)
-  const emailSender = createLogEmailSender(
-    createLogger(config),
-    config.emailLogLinks,
-  )
+  // SMTP_HOST is the switch. Unset means local development, where the log
+  // sender plus EMAIL_LOG_LINKS=true is enough to click through a flow.
+  const logger = createLogger(config)
+  const emailSender = config.smtp.host
+    ? createSmtpEmailSender(config, logger)
+    : createLogEmailSender(logger, config.emailLogLinks)
   const verificationService = createVerificationService({
     verificationRepo,
     userRepo,

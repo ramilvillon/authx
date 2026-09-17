@@ -54,6 +54,7 @@ npm install           # installs husky and activates the pre-commit hook
 cp .env.example .env
 deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
 docker compose up -d mysql      # start MySQL
+docker compose up -d mailpit    # optional: local mail catcher, inbox at :8025
 deno task db:migrate            # apply Drizzle migrations
 deno task db:generate <name>    # generate a migration, e.g. db:generate users_deleted_at
 deno task db:seed               # seed the platform tenant + bootstrap admin
