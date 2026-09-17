@@ -12,6 +12,7 @@ import {
   tokenRequestSchema,
 } from './auth.schema.ts'
 import { loginPage } from './login-page.ts'
+import { AppError } from '../../lib/errors.ts'
 import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { Context } from 'hono'
 
@@ -148,12 +149,19 @@ const auth = new Hono<AppEnv>()
       const f = c.req.valid('form')
       const presented = getCookie(c, CSRF_COOKIE)
       if (!presented || f.csrf_token !== presented) {
+        // A human gets the form back and simply retries. A script gets the
+        // machine-readable code instead: handing it a login page makes a
+        // protocol mistake look like bad credentials, and it would retry a
+        // login that can never succeed.
+        if (!c.req.header('accept')?.includes('text/html')) {
+          throw AppError.of('csrf_token_invalid')
+        }
         // Re-render rather than dead-end: csrfToken reuses the cookie, so a
         // legitimate caller whose cookie was missing gets a working form back.
         return c.html(
           loginPage(
             { ...f, csrf_token: csrfToken(c) },
-            'Your sign-in session expired. Please try again.',
+            'This sign-in form is no longer valid. Please try again.',
           ),
           403,
         )
