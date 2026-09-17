@@ -1,7 +1,4 @@
 // ponytail: plain server-rendered HTML string — no template engine, no JSX dep.
-// ponytail: no CSRF token on this form — SameSite=Lax + required credentials make
-// forced-login low-impact for first-party clients; add a pre-session CSRF token if
-// third-party clients are ever supported.
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (ch) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!
@@ -16,6 +13,7 @@ export function loginPage(
     state?: string
     code_challenge: string
     code_challenge_method: string
+    csrf_token: string
   },
   error?: string,
 ): string {
@@ -33,6 +31,7 @@ export function loginPage(
     ${hidden('state', params.state ?? '')}
     ${hidden('code_challenge', params.code_challenge)}
     ${hidden('code_challenge_method', params.code_challenge_method)}
+    ${hidden('csrf_token', params.csrf_token)}
     <label>Email <input type="email" name="email" required></label>
     <label>Password <input type="password" name="password" required></label>
     <button type="submit">Sign in</button>

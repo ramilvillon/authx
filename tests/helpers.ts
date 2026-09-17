@@ -227,3 +227,32 @@ export function seedPlatformAdmin(
     clientId: 'platform',
   })
 }
+
+// Posts the login form the way a browser does: fetch the page, carry its CSRF
+// cookie, and submit the token it rendered. Non-browser callers have to do this
+// too now — a bare POST to /oauth/authorize is refused (F21).
+export async function submitLoginForm(
+  app: ReturnType<typeof createApp>,
+  fields: Record<string, string>,
+): Promise<Response> {
+  const q = new URLSearchParams({
+    client_id: fields.client_id,
+    redirect_uri: fields.redirect_uri,
+    scope: fields.scope ?? '',
+    state: fields.state ?? '',
+    code_challenge: fields.code_challenge,
+    code_challenge_method: fields.code_challenge_method,
+  })
+  const page = await app.request(`/oauth/authorize?${q}`)
+  const cookie = page.headers.getSetCookie().map((c) => c.split(';')[0]).join(
+    '; ',
+  )
+  const csrf =
+    (await page.text()).match(/name="csrf_token" value="([^"]*)"/)?.[1] ?? ''
+  return await app.request('/oauth/authorize', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+    body: new URLSearchParams({ ...fields, csrf_token: csrf }).toString(),
+    redirect: 'manual',
+  })
+}

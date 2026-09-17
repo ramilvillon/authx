@@ -1,5 +1,5 @@
 import { assert, assertEquals } from '@std/assert'
-import { keySet, makeTestApp } from '../helpers.ts'
+import { keySet, makeTestApp, submitLoginForm } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { decode, verifyAccessToken } from '../../src/lib/jwt.ts'
 
@@ -60,12 +60,10 @@ async function codeFromLogin(
   challenge: string,
   scope: string,
 ) {
-  const res = await ctx.app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: form(challenge, scope),
-    redirect: 'manual',
-  })
+  const res = await submitLoginForm(
+    ctx.app,
+    Object.fromEntries(new URLSearchParams(form(challenge, scope))),
+  )
   return new URL(res.headers.get('location')!).searchParams.get('code')!
 }
 

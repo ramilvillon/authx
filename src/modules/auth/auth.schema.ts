@@ -50,6 +50,9 @@ export const authorizeQuerySchema = z.object({
 export const authorizeFormSchema = authorizeQuerySchema.extend({
   email: z.string().email(),
   password: z.string().min(1),
+  // Optional here on purpose: a missing token is a CSRF refusal (403), not a
+  // malformed body (400). The handler decides.
+  csrf_token: z.string().optional(),
 })
 
 export const clientCredentialsResponseSchema = z.object({
