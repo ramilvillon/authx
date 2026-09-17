@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, lt } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import type { AuthCodeRepository } from './authcode.repository.ts'
 import { authorizationCodes } from '../../db/schema.ts'
@@ -32,6 +32,12 @@ export function createDrizzleAuthCodeRepository(
     async deleteAllForUser(userId) {
       const [res] = await db.delete(authorizationCodes).where(
         eq(authorizationCodes.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
+    async deleteExpiredBefore(cutoff) {
+      const [res] = await db.delete(authorizationCodes).where(
+        lt(authorizationCodes.expiresAt, cutoff),
       )
       return (res as { affectedRows: number }).affectedRows
     },

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, lt } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import type { SessionRepository } from './session.repository.ts'
 import { sessions } from '../../db/schema.ts'
@@ -33,6 +33,12 @@ export function createDrizzleSessionRepository(
     async deleteAllForUser(userId) {
       const [res] = await db.delete(sessions).where(
         eq(sessions.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
+    async deleteExpiredBefore(cutoff) {
+      const [res] = await db.delete(sessions).where(
+        lt(sessions.expiresAt, cutoff),
       )
       return (res as { affectedRows: number }).affectedRows
     },
