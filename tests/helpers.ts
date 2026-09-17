@@ -39,6 +39,10 @@ const testEnv = {
 export type TestContext = {
   deps: Deps
   userRepo: ReturnType<typeof createInMemoryUserRepository>
+  tokenRepo: ReturnType<typeof createInMemoryRefreshTokenRepository>
+  sessionRepo: ReturnType<typeof createInMemorySessionRepository>
+  authCodeRepo: ReturnType<typeof createInMemoryAuthCodeRepository>
+  verificationRepo: ReturnType<typeof createInMemoryVerificationTokenRepository>
   socialRepo: SocialAccountRepository
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
@@ -97,7 +101,18 @@ export function makeTestDeps(
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
   }
-  return { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails }
+  return {
+    deps,
+    userRepo,
+    tokenRepo,
+    sessionRepo,
+    authCodeRepo,
+    verificationRepo,
+    socialRepo,
+    orgRepo,
+    rbacRepo,
+    sentEmails,
+  }
 }
 
 export function makeTestApp(envOverrides: Record<string, string> = {}) {

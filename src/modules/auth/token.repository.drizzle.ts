@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, lt } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import type { RefreshTokenRepository } from './token.repository.ts'
 import { refreshTokens } from '../../db/schema.ts'
@@ -47,6 +47,12 @@ export function createDrizzleRefreshTokenRepository(
     async deleteAllForUser(userId) {
       const [res] = await db.delete(refreshTokens).where(
         eq(refreshTokens.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
+    async deleteExpiredBefore(cutoff) {
+      const [res] = await db.delete(refreshTokens).where(
+        lt(refreshTokens.expiresAt, cutoff),
       )
       return (res as { affectedRows: number }).affectedRows
     },

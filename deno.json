@@ -13,6 +13,7 @@
     "db:generate": "deno run -A --env-file=.env npm:drizzle-kit generate",
     "db:migrate": "deno run -A --env-file=.env npm:drizzle-kit migrate",
     "db:seed": "deno run -A --env-file=.env src/db/seed.ts",
+    "db:prune": "deno run -A --env-file=.env src/db/prune.ts",
     "keys:gen": "deno eval \"import { generateRsaKeyPairPem } from './src/lib/keys.ts'; const k = await generateRsaKeyPairPem(); console.log('JWT_PRIVATE_KEY=\\\"'+k.privateKeyPem.replace(/\\n/g,'\\\\n')+'\\\"'); console.log('JWT_PUBLIC_KEY=\\\"'+k.publicKeyPem.replace(/\\n/g,'\\\\n')+'\\\"')\""
   },
   "imports": {

@@ -44,6 +44,11 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
+  // How long a row is kept AFTER it expires. This is the window in which a
+  // replayed refresh token or authorization code is still recognised as a
+  // replay rather than an unknown value, so it is a security setting, not
+  // housekeeping. Defaults to 30 days.
+  PRUNE_RETENTION: z.coerce.number().default(2592000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   // Number of reverse proxies in front of this service. 0 means never trust
@@ -87,6 +92,7 @@ export type Config = {
   emailVerificationTtl: number
   emailLogLinks: boolean
   google: { clientId: string; clientSecret: string; redirectUri: string }
+  pruneRetention: number
   rateLimit: { windowMs: number; max: number }
   trustProxyHops: number
 }
@@ -123,6 +129,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       clientSecret: e.GOOGLE_CLIENT_SECRET,
       redirectUri: e.GOOGLE_REDIRECT_URI,
     },
+    pruneRetention: e.PRUNE_RETENTION,
     rateLimit: { windowMs: e.RATE_LIMIT_WINDOW_MS, max: e.RATE_LIMIT_MAX },
     trustProxyHops: e.TRUST_PROXY,
   }

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, lt } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
 import type {
   TokenPurpose,
@@ -37,6 +37,12 @@ export function createDrizzleVerificationTokenRepository(
     async deleteAllForUser(userId) {
       const [res] = await db.delete(emailVerificationTokens).where(
         eq(emailVerificationTokens.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
+    async deleteExpiredBefore(cutoff) {
+      const [res] = await db.delete(emailVerificationTokens).where(
+        lt(emailVerificationTokens.expiresAt, cutoff),
       )
       return (res as { affectedRows: number }).affectedRows
     },
