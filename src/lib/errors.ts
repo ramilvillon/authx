@@ -51,6 +51,11 @@ export const ERRORS = {
     message:
       'an account with this email already exists; sign in with your password to link Google',
   },
+  csrf_token_invalid: {
+    status: 403,
+    message:
+      'csrf token missing or does not match; GET /oauth/authorize first and submit the csrf_token it renders along with its cookie',
+  },
   forbidden: { status: 403, message: 'forbidden' },
 } as const
 

@@ -189,3 +189,58 @@ Deno.test('a second tab does not invalidate the first', async () => {
     302,
   )
 })
+
+Deno.test('a non-browser client gets a diagnosable JSON error, not the login page', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx)
+  const challenge = await s256Challenge(VERIFIER)
+
+  const res = await ctx.app.request('/oauth/authorize', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+    },
+    body: form(challenge),
+    redirect: 'manual',
+  })
+
+  assertEquals(res.status, 403)
+  assert(
+    res.headers.get('content-type')?.includes('application/json'),
+    'a client that did not ask for HTML must not be handed a login page',
+  )
+  const body = await res.json()
+  // A stable code, so a caller can tell a protocol mistake from bad credentials
+  // instead of retrying a login that will never succeed.
+  assertEquals(body.error.code, 'csrf_token_invalid')
+  assert(
+    body.error.message.includes('/oauth/authorize'),
+    'the message must say how to obtain a token',
+  )
+})
+
+Deno.test('a browser still gets the form back so the human can simply retry', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx)
+  const challenge = await s256Challenge(VERIFIER)
+
+  const res = await ctx.app.request('/oauth/authorize', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'text/html,application/xhtml+xml',
+    },
+    body: form(challenge),
+    redirect: 'manual',
+  })
+
+  assertEquals(res.status, 403)
+  const html = await res.text()
+  assert(html.includes('<form'), 'the human needs a working form, not JSON')
+  assert(fieldOf(html, 'csrf_token'), 'and it must carry a usable token')
+  assert(
+    !html.includes('session expired'),
+    'nothing expired: there was never a session, and saying so invites a pointless retry',
+  )
+})
