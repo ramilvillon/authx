@@ -117,9 +117,11 @@ export function createVerificationService(deps: {
         }
       }
       if (record.purpose === 'account_deletion') {
-        // ponytail: hard delete, same as the direct route -- see the marker in
-        // users.repository.drizzle.ts. Soft delete lands with the cascade work.
-        await userRepo.delete(user.id)
+        // Soft, like every other deletion path: this is the one an attacker can
+        // trigger, so it must land in the grace period rather than destroy the
+        // row. The satellite cascade and the real erasure both happen in
+        // userService.purgeDeletedBefore once the grace period expires.
+        await userRepo.softDelete(user.id)
       }
       return record.purpose
     },
