@@ -139,7 +139,7 @@ Deno.test('Google login does not create a second row for a soft-deleted address'
         providerAccountId: 'g-returning',
         email: 'returning@b.com',
         emailVerified: true,
-      }, 'test-service'),
+      }),
     Error,
   )
   assertEquals(

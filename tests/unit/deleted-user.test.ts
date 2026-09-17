@@ -44,7 +44,7 @@ Deno.test('an orphaned row cannot refresh, resume a session, or log in via Googl
         providerAccountId: 'g1',
         email: 'gone@b.com',
         emailVerified: true,
-      }, audience),
+      }),
     Error,
     'invalid grant',
   )

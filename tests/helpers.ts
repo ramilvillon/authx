@@ -290,24 +290,30 @@ export async function submitLoginForm(
   app: ReturnType<typeof createApp>,
   fields: Record<string, string>,
 ): Promise<Response> {
-  const q = new URLSearchParams({
-    client_id: fields.client_id,
-    redirect_uri: fields.redirect_uri,
-    scope: fields.scope ?? '',
-    state: fields.state ?? '',
-    code_challenge: fields.code_challenge,
-    code_challenge_method: fields.code_challenge_method,
-  })
+  const { email, password, ...authorize } = fields
+  const q = new URLSearchParams({ scope: '', state: '', ...authorize })
   const page = await app.request(`/oauth/authorize?${q}`)
   const cookie = page.headers.getSetCookie().map((c) => c.split(';')[0]).join(
     '; ',
   )
-  const csrf =
-    (await page.text()).match(/name="csrf_token" value="([^"]*)"/)?.[1] ?? ''
+  // Submit what the page rendered, the way a browser does: posting `fields`
+  // directly would hide a parameter the form forgot to carry.
+  const hidden = Object.fromEntries(
+    [...(await page.text()).matchAll(
+      /<input type="hidden" name="([^"]*)" value="([^"]*)">/g,
+    )].map(([, name, value]) => [name, unescapeHtml(value)]),
+  )
   return await app.request('/oauth/authorize', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
-    body: new URLSearchParams({ ...fields, csrf_token: csrf }).toString(),
+    body: new URLSearchParams({ ...hidden, email, password }).toString(),
     redirect: 'manual',
   })
 }
+
+const unescapeHtml = (s: string) =>
+  s.replace(
+    /&(amp|lt|gt|quot|#39);/g,
+    (_, e) =>
+      ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e as string]!,
+  )

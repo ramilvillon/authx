@@ -1,10 +1,14 @@
 import { assert, assertEquals, assertStringIncludes } from '@std/assert'
 import { makeTestApp } from '../helpers.ts'
+import { s256Challenge } from '../../src/lib/pkce.ts'
+import { verifyAccessToken } from '../../src/lib/jwt.ts'
+import { keySet } from '../helpers.ts'
 
-// The rest of the suite calls `loginWithGoogle` directly, so nothing exercises
-// the `googleAuth` middleware mounted at `/oauth/google`. These tests drive the
-// real route: the middleware decides initiate-vs-callback, checks `state`, and
-// redeems the code, and all of that was previously untested.
+// Google login is a step of the authorize flow: the login page links to
+// /oauth/google with the pending authorize request, and the return leg ends
+// like a password login -- session cookie, then a code to the client's
+// redirect_uri. These drive the real route, googleAuth middleware included,
+// with global fetch standing in for Google.
 
 const GOOGLE_ENV = {
   GOOGLE_CLIENT_ID: 'test-client-id',
@@ -51,18 +55,118 @@ function stubGoogle(profile: Record<string, unknown>) {
 const cookieHeader = (res: Response) =>
   res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
 
-Deno.test('GET /oauth/google without a code redirects to Google carrying a state that is also set as a cookie', async () => {
-  const { app } = makeTestApp(GOOGLE_ENV)
+const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+const REDIRECT = 'https://app.example/cb'
 
-  const res = await app.request('/oauth/google?audience=test-service')
+// A client, and a passwordless verified member whose address the Google
+// profile below matches -- so the round trip links, signs in, and can redeem
+// its code for a token.
+async function seed(ctx: ReturnType<typeof makeTestApp>) {
+  const now = new Date()
+  const org = await ctx.orgRepo.createOrg({
+    id: crypto.randomUUID(),
+    slug: 'acme',
+    name: 'Acme',
+    createdAt: now,
+  })
+  await ctx.orgRepo.createService({
+    id: crypto.randomUUID(),
+    orgId: org.id,
+    clientId: 'cid_app',
+    clientSecretHash: null,
+    name: 'App',
+    slug: 'app',
+    audience: 'acme-app',
+    type: 'public',
+    redirectUris: [REDIRECT],
+    createdAt: now,
+  })
+  const user = await ctx.userRepo.create({
+    id: crypto.randomUUID(),
+    email: 'u@example.test',
+    passwordHash: null,
+    emailVerified: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await ctx.orgRepo.addMember({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    orgId: org.id,
+    createdAt: now,
+  })
+  return user
+}
 
+async function authorizeQuery(overrides: Record<string, string> = {}) {
+  return new URLSearchParams({
+    client_id: 'cid_app',
+    redirect_uri: REDIRECT,
+    scope: 'openid',
+    state: 'app-state',
+    nonce: 'n-1',
+    code_challenge: await s256Challenge(VERIFIER),
+    code_challenge_method: 'S256',
+    ...overrides,
+  })
+}
+
+const PROFILE = { id: 'g-1', email: 'u@example.test', verified_email: true }
+
+// Starts a Google sign-in and returns the browser's cookies plus the state
+// Google would echo back.
+async function start(app: ReturnType<typeof makeTestApp>['app']) {
+  const res = await app.request(`/oauth/google?${await authorizeQuery()}`)
   assertEquals(res.status, 302)
-  const location = res.headers.get('location') ?? ''
-  assertStringIncludes(location, 'https://accounts.google.com/o/oauth2/v2/auth')
-  const state = new URL(location).searchParams.get('state')
-  assert(state, 'the consent redirect must carry a state param')
+  const state = new URL(res.headers.get('location') ?? '').searchParams.get(
+    'state',
+  )
+  assert(state)
+  return { cookie: cookieHeader(res), state, res }
+}
 
-  const [stateCookie] = res.headers.getSetCookie()
+Deno.test('the login page links to Google with the authorize request, never the credentials', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery()}`,
+  )
+  const href = (await page.text()).match(/href="([^"]*)">Sign in with Google/)
+    ?.[1]
+  assert(href, 'the login page must offer Google when it is configured')
+  const q = new URL(href.replaceAll('&amp;', '&'), 'http://x').searchParams
+  assertEquals(q.get('client_id'), 'cid_app')
+  assertEquals(q.get('redirect_uri'), REDIRECT)
+  assertEquals(q.get('state'), 'app-state')
+  assertEquals(q.get('nonce'), 'n-1')
+  assertEquals(q.get('password'), null)
+})
+
+Deno.test('without Google configured there is no link and the route is 404', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx)
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery()}`,
+  )
+  assert(!(await page.text()).includes('Sign in with Google'))
+  const res = await ctx.app.request(`/oauth/google?${await authorizeQuery()}`)
+  assertEquals(res.status, 404)
+})
+
+Deno.test('GET /oauth/google redirects to Google carrying a state that is also set as a cookie', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+
+  const { res, state } = await start(ctx.app)
+
+  assertStringIncludes(
+    res.headers.get('location') ?? '',
+    'https://accounts.google.com/o/oauth2/v2/auth',
+  )
+  const stateCookie = res.headers.getSetCookie().find((c) =>
+    c.startsWith('state=')
+  )
+  assert(stateCookie)
   assertStringIncludes(stateCookie, `state=${state}`)
   assertStringIncludes(stateCookie, 'HttpOnly')
   // `Secure` is the library's, not ours, and it is load-bearing in a direction
@@ -73,6 +177,124 @@ Deno.test('GET /oauth/google without a code redirects to Google carrying a state
   // here rather than in production. Nothing server-side varies by scheme, so
   // the drop itself can only be observed in a real browser.
   assertStringIncludes(stateCookie, 'Secure')
+})
+
+Deno.test('an authorize request that fails validation never reaches Google', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const res = await ctx.app.request(
+    `/oauth/google?${await authorizeQuery({
+      redirect_uri: 'https://evil.example/cb',
+    })}`,
+  )
+  assertEquals(res.status, 400)
+  assertEquals(res.headers.get('location'), null)
+})
+
+Deno.test('signing in with Google returns a code to the client, and the code redeems for its audience', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const user = await seed(ctx)
+  const { cookie, state } = await start(ctx.app)
+
+  const google = stubGoogle(PROFILE)
+  let res: Response
+  try {
+    res = await ctx.app.request(`/oauth/google?code=good-code&state=${state}`, {
+      headers: { cookie },
+    })
+  } finally {
+    google.restore()
+  }
+
+  assertEquals(res.status, 302)
+  const location = new URL(res.headers.get('location') ?? '')
+  assertEquals(location.origin + location.pathname, REDIRECT)
+  assertEquals(location.searchParams.get('state'), 'app-state')
+  const code = location.searchParams.get('code')
+  assert(code)
+  assert(
+    res.headers.getSetCookie().some((c) => c.startsWith('authx_session=')),
+    'the Google login must open an SSO session like a password login',
+  )
+
+  const token = await ctx.app.request('/oauth/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: VERIFIER,
+      client_id: 'cid_app',
+    }),
+  })
+  assertEquals(token.status, 200)
+  const pair = await token.json()
+  const claims = await verifyAccessToken(pair.access_token, keySet.publicKeyPem)
+  assertEquals(claims.aud, 'acme-app')
+  assertEquals(claims.sub, user.id)
+  assert(pair.id_token, 'openid was requested, so an id_token comes back')
+  const idToken = JSON.parse(atob(pair.id_token.split('.')[1]))
+  assertEquals(idToken.nonce, 'n-1')
+})
+
+Deno.test('cancelling at Google shows the login page again instead of looping back to Google', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const { cookie, state } = await start(ctx.app)
+
+  const res = await ctx.app.request(
+    `/oauth/google?error=access_denied&state=${state}`,
+    { headers: { cookie } },
+  )
+
+  assertEquals(res.status, 401)
+  assertEquals(res.headers.get('location'), null)
+  assertStringIncludes(await res.text(), 'Google sign-in was cancelled')
+})
+
+Deno.test('a refused Google login shows the login page and signs nobody in', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const { cookie, state } = await start(ctx.app)
+
+  const google = stubGoogle({ ...PROFILE, id: 'g-2', verified_email: false })
+  let res: Response
+  try {
+    res = await ctx.app.request(`/oauth/google?code=good-code&state=${state}`, {
+      headers: { cookie },
+    })
+  } finally {
+    google.restore()
+  }
+
+  assertEquals(res.status, 403)
+  assertEquals(res.headers.get('location'), null)
+  assertStringIncludes(await res.text(), 'not verified')
+  assert(
+    !res.headers.getSetCookie().some((c) => c.startsWith('authx_session=')),
+  )
+})
+
+Deno.test('a Google return with no sign-in in progress is refused', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const { cookie, state } = await start(ctx.app)
+  // Keep the state cookie, lose the stored authorize request.
+  const stateOnly = cookie.split('; ').filter((c) => c.startsWith('state='))
+    .join('; ')
+
+  const google = stubGoogle(PROFILE)
+  try {
+    const res = await ctx.app.request(
+      `/oauth/google?code=good-code&state=${state}`,
+      { headers: { cookie: stateOnly } },
+    )
+    assertEquals(res.status, 400)
+    assertEquals((await res.json()).error.code, 'authorize_request_expired')
+  } finally {
+    google.restore()
+  }
 })
 
 Deno.test('GET /oauth/google refuses a callback that carries no state at all', async () => {
@@ -87,9 +309,7 @@ Deno.test('GET /oauth/google refuses a callback that carries no state at all', a
   try {
     // No state query param, and no state cookie: the victim's browser never
     // initiated a login. Comparing two absent values must not read as a match.
-    const res = await app.request(
-      '/oauth/google?code=attacker-code&audience=test-service',
-    )
+    const res = await app.request('/oauth/google?code=attacker-code')
 
     // This is the security property, and it is asserted first because it is the
     // one that actually distinguishes a rejected callback from an accepted one.
@@ -116,20 +336,15 @@ Deno.test('GET /oauth/google refuses a callback that carries no state at all', a
 })
 
 Deno.test('GET /oauth/google refuses a callback whose state does not match the cookie', async () => {
-  const { app } = makeTestApp(GOOGLE_ENV)
-  const initiate = await app.request('/oauth/google?audience=test-service')
-  const google = stubGoogle({
-    id: 'g-1',
-    email: 'u@example.test',
-    verified_email: true,
-  })
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const { cookie } = await start(ctx.app)
+  const google = stubGoogle(PROFILE)
 
   try {
-    const res = await app.request(
+    const res = await ctx.app.request(
       '/oauth/google?code=some-code&state=not-the-minted-one',
-      {
-        headers: { cookie: cookieHeader(initiate) },
-      },
+      { headers: { cookie } },
     )
 
     assertEquals(res.status, 401)
@@ -138,50 +353,6 @@ Deno.test('GET /oauth/google refuses a callback whose state does not match the c
       [],
       'the authorization code must never reach Google',
     )
-  } finally {
-    google.restore()
-  }
-})
-
-Deno.test('the audience query param does not survive the Google round trip', async () => {
-  const { app } = makeTestApp(GOOGLE_ENV)
-
-  const initiate = await app.request('/oauth/google?audience=test-service')
-  const state = new URL(initiate.headers.get('location') ?? '').searchParams
-    .get('state')
-  assert(state)
-
-  // Google redirects to the exact registered GOOGLE_REDIRECT_URI and echoes back
-  // only `code` and `state` — so whatever audience began the flow is gone, and
-  // the handler's own `c.req.query('audience')` finds nothing.
-  assertEquals(
-    new URL(GOOGLE_ENV.GOOGLE_REDIRECT_URI).searchParams.get('audience'),
-    null,
-    'the registered redirect URI pins no audience',
-  )
-
-  const google = stubGoogle({
-    id: 'g-1',
-    email: 'u@example.test',
-    verified_email: true,
-  })
-  try {
-    const res = await app.request(
-      `/oauth/google?code=good-code&state=${state}`,
-      {
-        headers: { cookie: cookieHeader(initiate) },
-      },
-    )
-
-    // ponytail: asserts today's broken behaviour so the fix has a tripwire.
-    // Carrying the audience through `state` is what closes this; when that
-    // lands, this test flips to asserting a 200 and a token pair.
-    assertEquals(
-      res.status,
-      400,
-      'the callback cannot know which audience to mint for',
-    )
-    assertEquals((await res.json()).error.code, 'bad_request')
   } finally {
     google.restore()
   }

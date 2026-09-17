@@ -1,26 +1,25 @@
 import { assert, assertEquals, assertRejects } from '@std/assert'
-import { makeTestDeps, seedDefaultService } from '../helpers.ts'
+import { makeTestDeps } from '../helpers.ts'
 
-Deno.test('loginWithGoogle new user: creates user + links account, throws unknown audience when no service seeded', async () => {
-  const { deps, userRepo } = makeTestDeps()
-  // No service seeded → issueTokensForService throws "unknown audience".
-  // Side-effects (user created, social linked) happen before the throw.
-  await assertRejects(
-    () =>
-      deps.authService.loginWithGoogle({
-        providerAccountId: 'g-123',
-        email: 'g@b.com',
-        emailVerified: true,
-      }, 'test-app'),
-    Error,
-    'unknown audience',
-  )
+Deno.test('loginWithGoogle new user: creates a passwordless user, links the account, opens a session', async () => {
+  const { deps, userRepo, socialRepo } = makeTestDeps()
+  const login = await deps.authService.loginWithGoogle({
+    providerAccountId: 'g-123',
+    email: 'g@b.com',
+    emailVerified: true,
+  })
   const user = await userRepo.findByEmail('g@b.com')
   assertEquals(user?.passwordHash, null)
+  assertEquals(login.userId, user?.id)
+  assertEquals(
+    (await socialRepo.findByProviderAccount('google', 'g-123'))?.userId,
+    user?.id,
+  )
+  assertEquals(await deps.authService.userIdForSession(login.token), user?.id)
 })
 
-Deno.test('loginWithGoogle links and issues tokens for a passwordless invited user who is a member', async () => {
-  const { deps, userRepo, orgRepo } = makeTestDeps()
+Deno.test('loginWithGoogle links a passwordless, verified account and signs it in', async () => {
+  const { deps, userRepo, socialRepo } = makeTestDeps()
   const now = new Date()
   // Simulate an invite-created user (no password) who verified their email.
   const invited = await userRepo.create({
@@ -31,20 +30,20 @@ Deno.test('loginWithGoogle links and issues tokens for a passwordless invited us
     createdAt: now,
     updatedAt: now,
   })
-  const audience = await seedDefaultService(orgRepo, invited.id)
-  const pair = await deps.authService.loginWithGoogle({
+  const login = await deps.authService.loginWithGoogle({
     providerAccountId: 'g-222',
     email: 'invited@b.com',
     emailVerified: true,
-  }, audience)
-  assert(pair.access_token.length > 0)
+  })
+  assertEquals(login.userId, invited.id)
+  assert(await socialRepo.findByProviderAccount('google', 'g-222'))
 })
 
 Deno.test('loginWithGoogle is idempotent for the same google account', async () => {
-  const { deps, userRepo, orgRepo } = makeTestDeps()
+  const { deps, userRepo } = makeTestDeps()
   const now = new Date()
   // Pre-create a passwordless, verified user and add them to an org.
-  const invited = await userRepo.create({
+  await userRepo.create({
     id: crypto.randomUUID(),
     email: 'g@b.com',
     passwordHash: null,
@@ -52,17 +51,16 @@ Deno.test('loginWithGoogle is idempotent for the same google account', async () 
     createdAt: now,
     updatedAt: now,
   })
-  const audience = await seedDefaultService(orgRepo, invited.id)
   await deps.authService.loginWithGoogle({
     providerAccountId: 'g-1',
     email: 'g@b.com',
     emailVerified: true,
-  }, audience)
+  })
   await deps.authService.loginWithGoogle({
     providerAccountId: 'g-1',
     email: 'g@b.com',
     emailVerified: true,
-  }, audience)
+  })
   const all = await userRepo.list()
   assertEquals(all.filter((u) => u.email === 'g@b.com').length, 1)
 })
@@ -75,7 +73,7 @@ Deno.test('loginWithGoogle refuses an unverified email', async () => {
         providerAccountId: 'g-x',
         email: 'evil@b.com',
         emailVerified: false,
-      }, 'test-app'),
+      }),
     Error,
     'not verified',
   )
@@ -100,7 +98,7 @@ Deno.test('loginWithGoogle refuses to link a passwordless account whose email is
         providerAccountId: 'g-attacker-2',
         email: 'victim@b.com',
         emailVerified: true,
-      }, 'test-app'),
+      }),
     Error,
     'already exists',
   )
@@ -135,7 +133,7 @@ Deno.test('loginWithGoogle refuses to link when local account has a password (pr
         providerAccountId: 'g-attacker',
         email: 'alice@b.com',
         emailVerified: true,
-      }, 'test-app'),
+      }),
     Error,
     'already exists',
   )
