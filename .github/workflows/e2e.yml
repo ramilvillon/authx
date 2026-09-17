@@ -37,6 +37,14 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=15
+      # Mail catcher: SMTP on 1025, HTTP API on 8025. Lets the SMTP sender be
+      # exercised against a real server rather than a stub, with no account and
+      # no secrets. Nothing leaves the runner.
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -58,8 +66,14 @@ jobs:
       # generate a throwaway pair for this run.
       - name: Configure environment
         run: |
-          grep -v '^JWT_PRIVATE_KEY=\|^JWT_PUBLIC_KEY=' .env.example > .env
+          grep -v '^JWT_PRIVATE_KEY=\|^JWT_PUBLIC_KEY=\|^SMTP_HOST=' .env.example > .env
           deno task keys:gen >> .env
+          # Point the SMTP sender at the mailpit service. SMTP_HOST is what
+          # switches deps.ts from the log sender to the real one, so setting it
+          # here is what puts the transport under test at all.
+          echo 'SMTP_HOST=127.0.0.1' >> .env
+          echo 'SMTP_PORT=1025' >> .env
+          echo 'EMAIL_FROM=authx-e2e@example.test' >> .env
 
       - name: Apply migrations
         run: deno task db:migrate
@@ -68,4 +82,7 @@ jobs:
         run: deno task db:seed
 
       - name: Run e2e tests
+        # MAILPIT_API is read by the SMTP test to read back what was delivered.
+        env:
+          MAILPIT_API: http://127.0.0.1:8025
         run: deno task test:e2e

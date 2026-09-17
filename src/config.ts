@@ -38,6 +38,19 @@ const schema = z.object({
   EMAIL_VERIFICATION_TTL: z.coerce.number().default(86400),
   // Local development only: logs the verification link (a live token) and the
   // recipient address in plaintext.
+  // SMTP_HOST is the switch: set it and deps.ts wires the real sender, leave
+  // it empty and the log sender stays. No separate on/off flag to fall out of
+  // step with the settings it guards.
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  // Implicit TLS on connect (port 465). Port 587 starts plaintext and upgrades
+  // with STARTTLS, which nodemailer does on its own.
+  SMTP_SECURE: z.enum(['true', 'false']).default('false').transform((v) =>
+    v === 'true'
+  ),
+  EMAIL_FROM: z.string().default(''),
   EMAIL_LOG_LINKS: z.enum(['true', 'false']).default('false').transform((v) =>
     v === 'true'
   ),
@@ -95,6 +108,14 @@ export type Config = {
   authCodeTtl: number
   emailVerificationTtl: number
   emailLogLinks: boolean
+  smtp: {
+    host: string
+    port: number
+    user: string
+    pass: string
+    secure: boolean
+    from: string
+  }
   google: { clientId: string; clientSecret: string; redirectUri: string }
   pruneRetention: number
   accountPurgeGrace: number
@@ -129,6 +150,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     authCodeTtl: e.AUTH_CODE_TTL,
     emailVerificationTtl: e.EMAIL_VERIFICATION_TTL,
     emailLogLinks: e.EMAIL_LOG_LINKS,
+    smtp: {
+      host: e.SMTP_HOST,
+      port: e.SMTP_PORT,
+      user: e.SMTP_USER,
+      pass: e.SMTP_PASS,
+      secure: e.SMTP_SECURE,
+      from: e.EMAIL_FROM,
+    },
     google: {
       clientId: e.GOOGLE_CLIENT_ID,
       clientSecret: e.GOOGLE_CLIENT_SECRET,
