@@ -215,7 +215,9 @@ Deno.test('changing email resets emailVerified to false', async () => {
   assertEquals((await repo.findById('u1'))?.emailVerified, false)
 })
 
-Deno.test('deleting a user purges every row that referenced them', async () => {
+// The cascade now runs at purge time, not at remove time: remove only marks the
+// row deleted (see soft-delete.test.ts). Same guarantee, later moment.
+Deno.test('purging a deleted user removes every row that referenced them', async () => {
   const ctx = fullService()
   const now = new Date()
   const later = new Date(Date.now() + 60_000)
@@ -272,6 +274,7 @@ Deno.test('deleting a user purges every row that referenced them', async () => {
   }
 
   await ctx.svc.remove(user.id)
+  assertEquals(await ctx.svc.purgeDeletedBefore(new Date(Date.now() + 1000)), 1)
 
   // The schema has no foreign keys, so nothing cleans these up for us.
   assertEquals(await ctx.tokenRepo.findByHash(`rt-hash-${user.id}`), null)
@@ -316,7 +319,7 @@ Deno.test('deleting a user purges every row that referenced them', async () => {
   )
 })
 
-Deno.test('deleting a user removes their org memberships too', async () => {
+Deno.test('purging a deleted user removes their org memberships too', async () => {
   const ctx = fullService()
   const user = await ctx.svc.register({
     email: 'm@b.com',
@@ -337,6 +340,7 @@ Deno.test('deleting a user removes their org memberships too', async () => {
   assertEquals(await ctx.orgRepo.isMember(user.id, org.id), true)
 
   await ctx.svc.remove(user.id)
+  await ctx.svc.purgeDeletedBefore(new Date(Date.now() + 1000))
 
   // A surviving membership would be inherited by any future row reusing the id.
   assertEquals(await ctx.orgRepo.isMember(user.id, org.id), false)

@@ -9,6 +9,7 @@ export type UserRecord = {
   givenName?: string | null
   familyName?: string | null
   picture?: string | null
+  deletedAt?: Date | null
 }
 
 export type UserWithAccess = UserRecord & {
@@ -36,9 +37,19 @@ export type UserRepository = {
       >
     >,
   ): Promise<UserRecord | null>
+  // Unfiltered on purpose: users.email is UNIQUE, so a soft-deleted row still
+  // occupies the address. Registration checks THIS, not findByEmail, so a
+  // reused address is reported as taken instead of failing on a duplicate key.
+  findAnyByEmail(email: string): Promise<UserRecord | null>
+  // Marks the row deleted. false = no such live row.
+  softDelete(id: string): Promise<boolean>
+  // Ids of rows soft-deleted before `cutoff`, for the purge job.
+  findDeletedBefore(cutoff: Date): Promise<string[]>
   // Compare-and-set: sets emailVerified only while the row still holds `email`.
   // false = the address changed since it was checked, so nothing was verified.
   markEmailVerified(id: string, email: string): Promise<boolean>
+  // Hard delete. Only the purge path calls this; ordinary deletion is
+  // softDelete, and callers must run the satellite cascade first.
   delete(id: string): Promise<boolean>
   list(): Promise<UserRecord[]>
   assignRole(userId: string, roleName: string): Promise<void>
@@ -62,17 +73,18 @@ export function createInMemoryUserRepository(
       return Promise.resolve({ ...user })
     },
     findById(id) {
-      return Promise.resolve(byId.has(id) ? { ...byId.get(id)! } : null)
+      const u = byId.get(id)
+      return Promise.resolve(u && !u.deletedAt ? { ...u } : null)
     },
     findByEmail(email) {
       for (const u of byId.values()) {
-        if (u.email === email) return Promise.resolve({ ...u })
+        if (u.email === email && !u.deletedAt) return Promise.resolve({ ...u })
       }
       return Promise.resolve(null)
     },
     findWithAccessById(id) {
       const u = byId.get(id)
-      if (!u) return Promise.resolve(null)
+      if (!u || u.deletedAt) return Promise.resolve(null)
       const roleNames = [...(userRoleNames.get(id) ?? [])]
       const perms = new Set<string>()
       for (const r of roleNames) {
@@ -97,11 +109,34 @@ export function createInMemoryUserRepository(
       byId.set(id, { ...u, emailVerified: true, updatedAt: new Date() })
       return Promise.resolve(true)
     },
+    findAnyByEmail(email) {
+      for (const u of byId.values()) {
+        if (u.email === email) return Promise.resolve({ ...u })
+      }
+      return Promise.resolve(null)
+    },
+    softDelete(id) {
+      const u = byId.get(id)
+      if (!u || u.deletedAt) return Promise.resolve(false)
+      byId.set(id, { ...u, deletedAt: new Date() })
+      return Promise.resolve(true)
+    },
+    findDeletedBefore(cutoff) {
+      const ids: string[] = []
+      for (const u of byId.values()) {
+        if (u.deletedAt && u.deletedAt.getTime() < cutoff.getTime()) {
+          ids.push(u.id)
+        }
+      }
+      return Promise.resolve(ids)
+    },
     delete(id) {
       return Promise.resolve(byId.delete(id))
     },
     list() {
-      return Promise.resolve([...byId.values()].map((u) => ({ ...u })))
+      return Promise.resolve(
+        [...byId.values()].filter((u) => !u.deletedAt).map((u) => ({ ...u })),
+      )
     },
     assignRole(userId, roleName) {
       const set = userRoleNames.get(userId) ?? new Set()

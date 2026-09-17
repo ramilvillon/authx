@@ -39,7 +39,10 @@ export function createUserService(deps: {
   } = deps
   return {
     async register(input: RegisterInput): Promise<PublicUser> {
-      if (await repo.findByEmail(input.email)) {
+      // findAnyByEmail, not findByEmail: users.email is UNIQUE, so a
+      // soft-deleted row still holds the address. Checking the filtered view
+      // would let this through and fail on a duplicate key at the database.
+      if (await repo.findAnyByEmail(input.email)) {
         throw AppError.of('email_taken')
       }
       const now = new Date()
@@ -123,21 +126,34 @@ export function createUserService(deps: {
       return toPublic(u)
     },
     async remove(id: string): Promise<void> {
-      // The schema has no foreign keys, so nothing cleans these up for us --
-      // which is why F13 had to make orphaned rows inert rather than absent.
-      // Satellites first, then the user row: if a purge fails the account still
-      // exists and a retry finishes the job, where the other order would leave
-      // orphans behind with no way to find them again.
-      await Promise.all([
-        tokenRepo.deleteAllForUser(id),
-        sessionRepo.deleteAllForUser(id),
-        authCodeRepo.deleteAllForUser(id),
-        verificationRepo.deleteAllForUser(id),
-        socialRepo.deleteAllForUser(id),
-        repo.removeAllRoles(id),
-        orgRepo.removeAllMemberships(id),
-      ])
-      if (!(await repo.delete(id))) throw AppError.of('user_not_found')
+      // Soft delete. Account deletion is something an attacker can trigger, so
+      // it must not be irreversible; `deno task db:prune` performs the real
+      // erasure after the grace period. Nothing is revoked explicitly here --
+      // the repository filter hides the row, and every auth path reaches a user
+      // through findById/findByEmail, so tokens and sessions die with it.
+      if (!(await repo.softDelete(id))) throw AppError.of('user_not_found')
+    },
+    // Erasure, after the grace period. Returns how many accounts were purged.
+    async purgeDeletedBefore(cutoff: Date): Promise<number> {
+      const ids = await repo.findDeletedBefore(cutoff)
+      for (const id of ids) {
+        // The schema has no foreign keys, so nothing cleans these up for us --
+        // which is why F13 had to make orphaned rows inert rather than absent.
+        // Satellites first, then the row: if a purge fails the account still
+        // exists and the next run finishes the job, where the other order
+        // would leave orphans behind with no way to find them again.
+        await Promise.all([
+          tokenRepo.deleteAllForUser(id),
+          sessionRepo.deleteAllForUser(id),
+          authCodeRepo.deleteAllForUser(id),
+          verificationRepo.deleteAllForUser(id),
+          socialRepo.deleteAllForUser(id),
+          repo.removeAllRoles(id),
+          orgRepo.removeAllMemberships(id),
+        ])
+        await repo.delete(id)
+      }
+      return ids.length
     },
     async list(): Promise<PublicUser[]> {
       return (await repo.list()).map(toPublic)

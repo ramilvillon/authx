@@ -210,3 +210,31 @@ Deno.test('an operator changes an email and deletes an account with no confirmat
     'no confirmation mail on the operator path',
   )
 })
+
+Deno.test('a confirmed self-service deletion is soft, and recoverable until it is purged', async () => {
+  const { app, userRepo, orgRepo, sentEmails } = makeTestApp()
+  const id = await registerAndId(app, 'dana8@b.com')
+  const audience = await seedDefaultService(orgRepo, id)
+  const { Authorization } = await authHeader(
+    app,
+    'dana8@b.com',
+    PASSWORD,
+    audience,
+  )
+
+  await app.request(`/users/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization },
+  })
+  assertEquals((await follow(app, sentEmails.at(-1)!.link)).status, 200)
+
+  // Gone from every ordinary lookup...
+  assertEquals(await userRepo.findById(id), null)
+  // ...but this is the path an attacker can trigger, so it must land in the
+  // grace period like any other deletion, not destroy the row outright.
+  assertEquals(
+    (await userRepo.findDeletedBefore(new Date(Date.now() + 1000))).length,
+    1,
+    'a confirmed deletion must be soft, not a hard delete that skips the cascade',
+  )
+})
