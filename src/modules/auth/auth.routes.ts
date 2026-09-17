@@ -12,12 +12,37 @@ import {
   tokenRequestSchema,
 } from './auth.schema.ts'
 import { loginPage } from './login-page.ts'
+import { generateRefreshToken } from '../../lib/tokens.ts'
+import type { Context } from 'hono'
 
 const json = (schema: ReturnType<typeof resolver>) => ({
   'application/json': { schema },
 })
 
 const SESSION_COOKIE = 'authx_session'
+const CSRF_COOKIE = 'authx_csrf'
+
+// Double-submit: the same random value in a cookie and in a hidden form field.
+// An attacker's page can forge the field but cannot read or write a cookie on
+// this origin, so it cannot make the two agree — which is what stops a
+// drive-by POST from logging a victim into the attacker's account.
+//
+// Reuse an existing cookie instead of minting per render. Re-minting was what
+// broke the previous attempt: every render would invalidate the field the last
+// one handed out, killing two open tabs, the back button, and the
+// wrong-password retry (which re-renders this very page).
+function csrfToken(c: Context<AppEnv>): string {
+  const token = getCookie(c, CSRF_COOKIE) ?? generateRefreshToken()
+  setCookie(c, CSRF_COOKIE, token, {
+    httpOnly: true,
+    // secure only over https (the issuer's scheme); lets local http dev work.
+    secure: c.var.config.issuer.startsWith('https'),
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 3600,
+  })
+  return token
+}
 
 function redirectTo(
   base: string,
@@ -100,7 +125,7 @@ const auth = new Hono<AppEnv>()
       const session = sessionToken
         ? await c.var.authService.resolveSession(sessionToken)
         : null
-      if (!session) return c.html(loginPage(q))
+      if (!session) return c.html(loginPage({ ...q, csrf_token: csrfToken(c) }))
       const code = await c.var.authService.issueAuthorizationCode(
         session.userId,
         service,
@@ -121,6 +146,18 @@ const auth = new Hono<AppEnv>()
     validator('form', authorizeFormSchema),
     async (c) => {
       const f = c.req.valid('form')
+      const presented = getCookie(c, CSRF_COOKIE)
+      if (!presented || f.csrf_token !== presented) {
+        // Re-render rather than dead-end: csrfToken reuses the cookie, so a
+        // legitimate caller whose cookie was missing gets a working form back.
+        return c.html(
+          loginPage(
+            { ...f, csrf_token: csrfToken(c) },
+            'Your sign-in session expired. Please try again.',
+          ),
+          403,
+        )
+      }
       const service = await c.var.authService.validateAuthorizeRequest({
         clientId: f.client_id,
         redirectUri: f.redirect_uri,
@@ -131,7 +168,13 @@ const auth = new Hono<AppEnv>()
       try {
         login = await c.var.authService.loginCreateSession(f.email, f.password)
       } catch {
-        return c.html(loginPage(f, 'Invalid email or password'), 401)
+        return c.html(
+          loginPage(
+            { ...f, csrf_token: csrfToken(c) },
+            'Invalid email or password',
+          ),
+          401,
+        )
       }
       // secure only over https (the issuer's scheme); lets local http dev work.
       setCookie(c, SESSION_COOKIE, login.token, {

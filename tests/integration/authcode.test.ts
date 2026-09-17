@@ -1,5 +1,5 @@
 import { assert, assertEquals } from '@std/assert'
-import { keySet, makeTestApp } from '../helpers.ts'
+import { keySet, makeTestApp, submitLoginForm } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { verifyAccessToken } from '../../src/lib/jwt.ts'
 
@@ -61,12 +61,10 @@ Deno.test('full auth-code flow: login -> code -> token -> verify', async () => {
   await seed(ctx)
   const challenge = await s256Challenge(VERIFIER)
 
-  const loginRes = await ctx.app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: authorizeForm(challenge).toString(),
-    redirect: 'manual',
-  })
+  const loginRes = await submitLoginForm(
+    ctx.app,
+    Object.fromEntries(authorizeForm(challenge)),
+  )
   assertEquals(loginRes.status, 302)
   const location = loginRes.headers.get('location')!
   const url = new URL(location)
@@ -135,12 +133,10 @@ Deno.test('replayed code is rejected at the token endpoint', async () => {
   const ctx = makeTestApp()
   await seed(ctx)
   const challenge = await s256Challenge(VERIFIER)
-  const loginRes = await ctx.app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: authorizeForm(challenge).toString(),
-    redirect: 'manual',
-  })
+  const loginRes = await submitLoginForm(
+    ctx.app,
+    Object.fromEntries(authorizeForm(challenge)),
+  )
   const code = new URL(loginRes.headers.get('location')!).searchParams.get(
     'code',
   )!
@@ -169,11 +165,9 @@ Deno.test('wrong password re-renders the form with 401', async () => {
   const ctx = makeTestApp()
   await seed(ctx)
   const challenge = await s256Challenge(VERIFIER)
-  const res = await ctx.app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: authorizeForm(challenge, { password: 'wrong' }).toString(),
-    redirect: 'manual',
-  })
+  const res = await submitLoginForm(
+    ctx.app,
+    Object.fromEntries(authorizeForm(challenge, { password: 'wrong' })),
+  )
   assertEquals(res.status, 401)
 })
