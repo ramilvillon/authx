@@ -68,6 +68,13 @@ export function createDrizzleUserRepository(db: Database): UserRepository {
       // re-verifying an already-verified row still reports 1.
       return (res as { affectedRows: number }).affectedRows === 1
     },
+    // ponytail: hard delete, and the schema has no foreign keys — this orphans
+    // rows in refresh_tokens, social_accounts, user_roles, memberships,
+    // sessions, authorization_codes and email_verification_tokens, forever.
+    // F13 compensates by making orphaned rows inert rather than absent. Agreed
+    // upgrade: soft delete (`deletedAt`, filtered here in the repository so
+    // findById/findByEmail are the single chokepoint) plus a purge job for the
+    // real erasure. Blocked on the same cascade/pruning work either way.
     async delete(id) {
       const [res] = await db.delete(users).where(eq(users.id, id))
       return (res as { affectedRows: number }).affectedRows > 0
