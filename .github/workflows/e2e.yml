@@ -90,3 +90,14 @@ jobs:
         env:
           MAILPIT_API: http://127.0.0.1:8025
         run: deno task test:e2e
+
+      # The same integration suite that runs on in-memory fakes, run again on the
+      # drizzle repositories. The fakes are more permissive than MySQL; this is
+      # where that divergence shows up. It gets its own database because every
+      # test truncates every table.
+      - name: Run integration tests on MySQL
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE app_test; GRANT ALL ON app_test.* TO 'app'@'%';"
+          DB_NAME=app_test deno task db:migrate
+          DB_NAME=app_test deno task db:seed
+          deno task test:integration:mysql

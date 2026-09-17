@@ -1,4 +1,13 @@
 import type { Deps } from '../src/deps.ts'
+import { testDb } from './mysql-mode.ts'
+import { createDrizzleUserRepository } from '../src/modules/users/users.repository.drizzle.ts'
+import { createDrizzleRefreshTokenRepository } from '../src/modules/auth/token.repository.drizzle.ts'
+import { createDrizzleSocialAccountRepository } from '../src/modules/auth/social.repository.drizzle.ts'
+import { createDrizzleOrgRepository } from '../src/modules/orgs/orgs.repository.drizzle.ts'
+import { createDrizzleRbacRepository } from '../src/modules/rbac/rbac.repository.drizzle.ts'
+import { createDrizzleSessionRepository } from '../src/modules/auth/session.repository.drizzle.ts'
+import { createDrizzleAuthCodeRepository } from '../src/modules/auth/authcode.repository.drizzle.ts'
+import { createDrizzleVerificationTokenRepository } from '../src/modules/verification/verification.repository.drizzle.ts'
 import type { UserRepository } from '../src/modules/users/users.repository.ts'
 import { createApp } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
@@ -54,13 +63,27 @@ export function makeTestDeps(
   envOverrides: Record<string, string> = {},
 ): TestContext {
   const config = loadConfig({ ...testEnv, ...envOverrides })
-  const userRepo = createInMemoryUserRepository()
-  const tokenRepo = createInMemoryRefreshTokenRepository()
-  const orgRepo = createInMemoryOrgRepository()
-  const rbacRepo = createInMemoryRbacRepository()
-  const sessionRepo = createInMemorySessionRepository()
-  const authCodeRepo = createInMemoryAuthCodeRepository()
-  const verificationRepo = createInMemoryVerificationTokenRepository()
+  const userRepo = testDb
+    ? createDrizzleUserRepository(testDb)
+    : createInMemoryUserRepository()
+  const tokenRepo = testDb
+    ? createDrizzleRefreshTokenRepository(testDb)
+    : createInMemoryRefreshTokenRepository()
+  const orgRepo = testDb
+    ? createDrizzleOrgRepository(testDb)
+    : createInMemoryOrgRepository()
+  const rbacRepo = testDb
+    ? createDrizzleRbacRepository(testDb)
+    : createInMemoryRbacRepository()
+  const sessionRepo = testDb
+    ? createDrizzleSessionRepository(testDb)
+    : createInMemorySessionRepository()
+  const authCodeRepo = testDb
+    ? createDrizzleAuthCodeRepository(testDb)
+    : createInMemoryAuthCodeRepository()
+  const verificationRepo = testDb
+    ? createDrizzleVerificationTokenRepository(testDb)
+    : createInMemoryVerificationTokenRepository()
   const sentEmails: { to: string; purpose: TokenPurpose; link: string }[] = []
   const emailSender = {
     sendLink(to: string, purpose: TokenPurpose, link: string) {
@@ -76,7 +99,9 @@ export function makeTestDeps(
     emailSender,
     config,
   })
-  const socialRepo = createInMemorySocialAccountRepository()
+  const socialRepo = testDb
+    ? createDrizzleSocialAccountRepository(testDb)
+    : createInMemorySocialAccountRepository()
   const deps: Deps = {
     config,
     keySet,
