@@ -1,4 +1,5 @@
 import type { Deps } from '../src/deps.ts'
+import type { UserRepository } from '../src/modules/users/users.repository.ts'
 import { createApp } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import { createInMemoryUserRepository } from '../src/modules/users/users.repository.ts'
@@ -228,11 +229,21 @@ export const PLATFORM_PERMISSIONS = [
 ]
 
 // Mints a platform-scoped access token directly: the token's scope IS the authz
-// for the management API, so no repo seeding is needed. Pass a narrower
-// permission list to exercise the missing-permission (403) path.
-export function seedPlatformAdmin(
+// for the management API, so no RBAC seeding is needed. The admin does need a
+// user row -- requireAuth rejects a user token whose subject does not exist.
+// Pass a narrower permission list to exercise the missing-permission (403) path.
+export async function seedPlatformAdmin(
+  userRepo: UserRepository,
   permissions: string[] = PLATFORM_PERMISSIONS,
 ): Promise<string> {
+  const now = new Date()
+  await userRepo.create({
+    id: 'admin-user',
+    email: 'platform-admin@test.local',
+    passwordHash: null,
+    createdAt: now,
+    updatedAt: now,
+  })
   return signAccessToken({
     sub: 'admin-user',
     issuer: 'http://test.local',
@@ -243,6 +254,7 @@ export function seedPlatformAdmin(
     org: 'platform',
     scope: permissions.join(' '),
     clientId: 'platform',
+    subType: 'user',
   })
 }
 

@@ -168,12 +168,12 @@ Deno.test('a passwordless account cannot have a first password set through self-
 })
 
 Deno.test('an operator with users:update:any sets a password without proving the current one', async () => {
-  const { app, orgRepo } = makeTestApp()
+  const { userRepo, app, orgRepo } = makeTestApp()
   const id = await registerAndId(app, 'locked-out@b.com')
   const audience = await seedDefaultService(orgRepo, id)
   // An operator never knows the user's password — that is the whole point of
   // the permission, and it is the only way back in for a passwordless account.
-  const Authorization = `Bearer ${await seedPlatformAdmin([
+  const Authorization = `Bearer ${await seedPlatformAdmin(userRepo, [
     'users:update:any',
   ])}`
 

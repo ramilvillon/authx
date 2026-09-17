@@ -20,6 +20,7 @@ Deno.test('sign + verify access token (RS256)', async () => {
     org: 'o1',
     scope: '',
     clientId: 'cid_1',
+    subType: 'user',
   })
   const payload = await verifyAccessToken(token, publicKeyPem)
   assertEquals(payload.sub, 'u1')
@@ -38,6 +39,7 @@ Deno.test('access token carries aud, org, scope', async () => {
     org: 'o1',
     scope: 'billing:read billing:write',
     clientId: 'cid_1',
+    subType: 'user',
   })
   const p = await verifyAccessToken(token, publicKeyPem)
   assertEquals(p.aud, 'acme-billing')
@@ -59,6 +61,7 @@ Deno.test('signAccessToken writes the kid into the JWT header', async () => {
     org: 'o',
     scope: '',
     clientId: 'c',
+    subType: 'user',
   })
   const { header } = decode(token) as { header: { kid?: string } }
   assertEquals(header.kid, ring.kid)
@@ -77,6 +80,7 @@ Deno.test('verifyWithKeyRing verifies by kid, falls back to active, rejects unkn
     org: 'o',
     scope: 'x',
     clientId: 'c',
+    subType: 'user',
   })
   const claims = await verifyWithKeyRing(token, ring)
   assertEquals(claims.sub, 'u1')
@@ -94,6 +98,7 @@ Deno.test('verifyWithKeyRing verifies by kid, falls back to active, rejects unkn
     org: 'o',
     scope: '',
     clientId: 'c',
+    subType: 'user',
   })
   let threw = false
   try {

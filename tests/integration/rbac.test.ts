@@ -36,8 +36,10 @@ Deno.test('non-admin cannot list users', async () => {
 })
 
 Deno.test('platform admin can list users', async () => {
-  const { app } = makeTestApp()
-  const Authorization = `Bearer ${await seedPlatformAdmin(['users:list'])}`
+  const { userRepo, app } = makeTestApp()
+  const Authorization = `Bearer ${await seedPlatformAdmin(userRepo, [
+    'users:list',
+  ])}`
   assertEquals(
     (await app.request('/users', { headers: { Authorization } })).status,
     200,
@@ -64,7 +66,7 @@ Deno.test('tenant-service token with users:list cannot list users', async () => 
 })
 
 Deno.test('user can read self but not others; only a platform admin reads others', async () => {
-  const { app, orgRepo, rbacRepo } = makeTestApp()
+  const { userRepo, app, orgRepo, rbacRepo } = makeTestApp()
   const aId = await registerAndId(app, 'a@b.com')
   const bId = await registerAndId(app, 'b@b.com')
   const audience = await seedDefaultService(orgRepo, aId)
@@ -92,7 +94,9 @@ Deno.test('user can read self but not others; only a platform admin reads others
     403,
   )
 
-  const platform = `Bearer ${await seedPlatformAdmin(['users:read:any'])}`
+  const platform = `Bearer ${await seedPlatformAdmin(userRepo, [
+    'users:read:any',
+  ])}`
   assertEquals(
     (await app.request(`/users/${bId}`, {
       headers: { Authorization: platform },

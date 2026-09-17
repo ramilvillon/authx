@@ -22,7 +22,7 @@ function json(token: string, body: unknown) {
 
 Deno.test('admin can create an org', async () => {
   const ctx = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const token = await seedPlatformAdmin(ctx.userRepo)
   const res = await ctx.app.request(
     '/orgs',
     json(token, { slug: 'acme', name: 'Acme' }),
@@ -35,6 +35,7 @@ Deno.test('missing permission -> 403', async () => {
   const ctx = makeTestApp()
   // Token without orgs:write.
   const token = await seedPlatformAdmin(
+    ctx.userRepo,
     PLATFORM_PERMISSIONS.filter((p) => p !== 'orgs:write'),
   )
   const res = await ctx.app.request(
@@ -76,7 +77,7 @@ Deno.test('a service-scoped token with a colliding permission cannot reach the a
 
 Deno.test('register confidential service returns a one-time client secret', async () => {
   const ctx = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const token = await seedPlatformAdmin(ctx.userRepo)
   const org = await (await ctx.app.request(
     '/orgs',
     json(token, { slug: 'acme', name: 'Acme' }),
@@ -97,8 +98,8 @@ Deno.test('register confidential service returns a one-time client secret', asyn
 })
 
 Deno.test('POST /clients/:id/roles grants a client a role -> M2M token carries it', async () => {
-  const { app, orgRepo, rbacRepo } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app, orgRepo, rbacRepo } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const now = new Date()
   const org = await orgRepo.createOrg({
     id: crypto.randomUUID(),
@@ -172,7 +173,7 @@ Deno.test('POST /clients/:id/roles grants a client a role -> M2M token carries i
 
 Deno.test('end-to-end: grant a role and see it in the token scope', async () => {
   const ctx = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const token = await seedPlatformAdmin(ctx.userRepo)
 
   const org = await (await ctx.app.request(
     '/orgs',

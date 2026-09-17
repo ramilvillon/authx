@@ -2,11 +2,18 @@ import { assert, assertEquals } from '@std/assert'
 import { keySet, makeTestApp, submitLoginForm } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { verifyAccessToken } from '../../src/lib/jwt.ts'
+import { hashToken } from '../../src/lib/tokens.ts'
 
 const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
 const REDIRECT = 'https://app.example/cb'
 
-async function seed(ctx: ReturnType<typeof makeTestApp>) {
+async function seed(
+  ctx: ReturnType<typeof makeTestApp>,
+  client: { type: string; clientSecretHash: string | null } = {
+    type: 'public',
+    clientSecretHash: null,
+  },
+) {
   // Register the user (sets a password hash) via the public endpoint.
   await ctx.app.request('/users', {
     method: 'POST',
@@ -24,11 +31,12 @@ async function seed(ctx: ReturnType<typeof makeTestApp>) {
     id: crypto.randomUUID(),
     orgId: org.id,
     clientId: 'cid_app',
-    clientSecretHash: null,
+    clientSecretHash: client.clientSecretHash,
     name: 'App',
     slug: 'app',
     audience: 'acme-app',
-    type: 'public',
+    // Widened so a test can store a type the API never writes.
+    type: client.type as 'public' | 'confidential',
     redirectUris: [REDIRECT],
     createdAt: now,
   })
@@ -169,5 +177,34 @@ Deno.test('wrong password re-renders the form with 401', async () => {
     ctx.app,
     Object.fromEntries(authorizeForm(challenge, { password: 'wrong' })),
   )
+  assertEquals(res.status, 401)
+})
+
+// The secret check is an allow-list on `public`: `type` is a free varchar, so a
+// value the API never writes must be authenticated, not waved through.
+Deno.test('a client whose type is not public must present its secret', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx, {
+    type: 'Confidential',
+    clientSecretHash: await hashToken('s3cret'),
+  })
+  const loginRes = await submitLoginForm(
+    ctx.app,
+    Object.fromEntries(authorizeForm(await s256Challenge(VERIFIER))),
+  )
+  const code = new URL(loginRes.headers.get('location')!).searchParams.get(
+    'code',
+  )!
+  const res = await ctx.app.request('/oauth/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: VERIFIER,
+      client_id: 'cid_app',
+    }),
+  })
   assertEquals(res.status, 401)
 })

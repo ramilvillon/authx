@@ -42,8 +42,8 @@ async function orgAndService(
 }
 
 Deno.test('creating an org with a taken slug is a conflict, not a server error', async () => {
-  const { app } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const body = { slug: 'acme', name: 'Acme' }
 
   assertEquals((await app.request('/orgs', post(token, body))).status, 201)
@@ -54,8 +54,8 @@ Deno.test('creating an org with a taken slug is a conflict, not a server error',
 })
 
 Deno.test('registering a service with a taken audience is a conflict', async () => {
-  const { app } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const { orgId } = await orgAndService(app, token)
 
   // The audience is globally unique: it is what an access token's `aud` claim
@@ -77,8 +77,8 @@ Deno.test('registering a service with a taken audience is a conflict', async () 
 })
 
 Deno.test('creating a role with a name already used in that service is a conflict', async () => {
-  const { app } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const { serviceId } = await orgAndService(app, token)
 
   assertEquals(
@@ -98,8 +98,8 @@ Deno.test('creating a role with a name already used in that service is a conflic
 })
 
 Deno.test('creating a permission with a key already used in that service is a conflict', async () => {
-  const { app } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const { serviceId } = await orgAndService(app, token)
 
   assertEquals(
@@ -119,8 +119,8 @@ Deno.test('creating a permission with a key already used in that service is a co
 })
 
 Deno.test('the same name in a DIFFERENT service is not a conflict', async () => {
-  const { app } = makeTestApp()
-  const token = await seedPlatformAdmin()
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
   const { orgId, serviceId } = await orgAndService(app, token)
   const second = await (await app.request(
     `/orgs/${orgId}/services`,
