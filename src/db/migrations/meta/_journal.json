@@ -71,6 +71,13 @@
       "when": 1789610951070,
       "tag": "0009_wealthy_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1789614686736,
+      "tag": "0010_flat_wind_dancer",
+      "breakpoints": true
     }
   ]
 }

@@ -56,7 +56,7 @@ deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
 docker compose up -d mysql      # start MySQL
 deno task db:migrate            # apply Drizzle migrations
 deno task db:seed               # seed the platform tenant + bootstrap admin
-deno task db:prune              # delete expired rows (run this on a schedule)
+deno task db:prune              # delete expired rows + erase deleted accounts (run on a schedule)
 deno task dev                   # start the API with --watch
 ```
 
@@ -93,6 +93,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                      |
 | `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                              |
 | `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window |
+| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                        |
 | `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                          |
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                      |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                            |

@@ -2,6 +2,7 @@ import { assert, assertEquals } from '@std/assert'
 import { loadConfig } from '../../src/config.ts'
 import { createDb } from '../../src/db/client.ts'
 import { createDrizzleVerificationTokenRepository } from '../../src/modules/verification/verification.repository.drizzle.ts'
+import { createDrizzleUserRepository } from '../../src/modules/users/users.repository.drizzle.ts'
 
 const hasDb = Boolean(Deno.env.get('DB_NAME'))
 const days = (n: number) => n * 86400 * 1000
@@ -45,6 +46,45 @@ Deno.test({
     assert(await repo.findByHash(live))
 
     await repo.deleteAllForUser(userId)
+    await pool.end()
+  },
+})
+
+// The in-memory double filters in JS; the real repository filters with
+// `deleted_at IS NULL` in MySQL. Only this test exercises that.
+Deno.test({
+  name:
+    'drizzle soft delete hides the row from every ordinary lookup (needs MySQL)',
+  ignore: !hasDb,
+  fn: async () => {
+    const { db, pool } = createDb(loadConfig(Deno.env.toObject()))
+    const repo = createDrizzleUserRepository(db)
+    const now = new Date()
+    const email = `soft-${crypto.randomUUID()}@b.com`
+    const user = await repo.create({
+      id: crypto.randomUUID(),
+      email,
+      passwordHash: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    assert(await repo.findById(user.id))
+    assert(await repo.softDelete(user.id))
+
+    assertEquals(await repo.findById(user.id), null)
+    assertEquals(await repo.findByEmail(email), null)
+    assertEquals(await repo.findWithAccessById(user.id), null)
+    // Unfiltered on purpose: the UNIQUE constraint still holds the address, so
+    // registration has to be able to see it.
+    assert(await repo.findAnyByEmail(email))
+    // A second soft delete is a no-op, not a second row touched.
+    assertEquals(await repo.softDelete(user.id), false)
+
+    const ids = await repo.findDeletedBefore(new Date(Date.now() + 60_000))
+    assert(ids.includes(user.id))
+
+    await repo.delete(user.id)
     await pool.end()
   },
 })

@@ -77,10 +77,14 @@ if (import.meta.main) {
     '../modules/verification/verification.repository.drizzle.ts'
   )
 
+  const { createDeps } = await import('../deps.ts')
   const config = loadConfig(Deno.env.toObject())
   const logger = createLogger(config)
   const { db } = createDb(config)
+  const deps = await createDeps(config, db)
   const cutoff = new Date(Date.now() - config.pruneRetention * 1000)
+  const purgeCutoff = new Date(Date.now() - config.accountPurgeGrace * 1000)
+  const purgedAccounts = await deps.userService.purgeDeletedBefore(purgeCutoff)
   const counts = await pruneExpired({
     tokenRepo: createDrizzleRefreshTokenRepository(db),
     sessionRepo: createDrizzleSessionRepository(db),
@@ -88,8 +92,13 @@ if (import.meta.main) {
     verificationRepo: createDrizzleVerificationTokenRepository(db),
   }, cutoff)
   logger.info(
-    { cutoff: cutoff.toISOString(), ...counts },
-    'pruned expired rows',
+    {
+      cutoff: cutoff.toISOString(),
+      purgeCutoff: purgeCutoff.toISOString(),
+      purgedAccounts,
+      ...counts,
+    },
+    'pruned expired rows and purged deleted accounts',
   )
   Deno.exit(0)
 }

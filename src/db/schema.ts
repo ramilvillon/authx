@@ -20,6 +20,12 @@ export const users = mysqlTable('users', {
   picture: varchar('picture', { length: 1024 }),
   createdAt: datetime('created_at').notNull(),
   updatedAt: datetime('updated_at').notNull(),
+  // Set instead of deleting the row, so an account deletion an attacker can
+  // trigger stays recoverable. `deno task db:prune` performs the real erasure
+  // after the grace period. Every ordinary lookup filters on this being NULL --
+  // the filter lives in users.repository.drizzle.ts so findById/findByEmail are
+  // the single chokepoint.
+  deletedAt: datetime('deleted_at'),
 })
 
 export const refreshTokens = mysqlTable('refresh_tokens', {
