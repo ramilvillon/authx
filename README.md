@@ -118,29 +118,29 @@ are rejected.
 
 ## API endpoints
 
-| Method   | Path                                | Auth                               | Description                                                                 |
-| -------- | ----------------------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
-| `GET`    | `/health`                           | —                                  | Liveness check                                                              |
-| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)                                          |
-| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                                                  |
-| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                                                  |
-| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                                  |
-| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user; a self-service `password` change requires `current_password` |
-| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                                               |
-| `GET`    | `/verify-email`                     | —                                  | Verify via emailed token                                                    |
-| `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                                      |
-| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant                 |
-| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                                      |
-| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)                                   |
-| `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                                   |
-| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                                |
-| `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                                      |
-| `GET`    | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                       |
-| `POST`   | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                       |
-| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                                                   |
-| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                                                     |
-| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                                       |
-| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                                                     |
+| Method   | Path                                | Auth                               | Description                                                                                                                                  |
+| -------- | ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/health`                           | —                                  | Liveness check                                                                                                                               |
+| `POST`   | `/users`                            | —                                  | Register a user (gets `user` role)                                                                                                           |
+| `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                                                                                                                   |
+| `GET`    | `/users`                            | Bearer + `users:list`              | List users                                                                                                                                   |
+| `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                                                                                                   |
+| `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user; a self-service `password` change requires `current_password`, and a self-service `email` change is held (202) until confirmed |
+| `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                                                                                                                |
+| `GET`    | `/verify-email`                     | —                                  | Verify via emailed token                                                                                                                     |
+| `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                                                                                                       |
+| `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant                                                                                  |
+| `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                                                                                                       |
+| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)                                                                                                    |
+| `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                                                                                                    |
+| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                                                                                                 |
+| `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                                                                                                       |
+| `GET`    | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
+| `POST`   | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
+| `GET`    | `/.well-known/jwks.json`            | —                                  | Public signing key (JWKS)                                                                                                                    |
+| `GET`    | `/.well-known/openid-configuration` | —                                  | OIDC discovery document                                                                                                                      |
+| `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                                                                                                        |
+| `GET`    | `/docs`                             | —                                  | Scalar API reference UI                                                                                                                      |
 
 `POST /oauth/token` accepts an optional `audience` (a service's `audience`
 string); the returned access token then carries exactly the permissions that

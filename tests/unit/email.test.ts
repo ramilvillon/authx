@@ -10,8 +10,9 @@ function fakeLogger(lines: unknown[]) {
 Deno.test('log email sender logs the link when explicitly enabled', async () => {
   const lines: unknown[] = []
   const sender = createLogEmailSender(fakeLogger(lines), true)
-  await sender.sendVerificationEmail(
+  await sender.sendLink(
     'a@b.com',
+    'verify_email',
     'http://t/verify-email?token=xyz',
   )
   assert(lines.length === 1)
@@ -21,8 +22,9 @@ Deno.test('log email sender logs the link when explicitly enabled', async () => 
 Deno.test('log email sender omits token and recipient by default', async () => {
   const lines: unknown[] = []
   const sender = createLogEmailSender(fakeLogger(lines))
-  await sender.sendVerificationEmail(
+  await sender.sendLink(
     'a@b.com',
+    'verify_email',
     'http://t/verify-email?token=xyz',
   )
   assert(lines.length === 1)

@@ -1,6 +1,9 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '../../db/client.ts'
-import type { VerificationTokenRepository } from './verification.repository.ts'
+import type {
+  TokenPurpose,
+  VerificationTokenRepository,
+} from './verification.repository.ts'
 import { emailVerificationTokens } from '../../db/schema.ts'
 
 export function createDrizzleVerificationTokenRepository(
@@ -17,7 +20,10 @@ export function createDrizzleVerificationTokenRepository(
       const row = await db.query.emailVerificationTokens.findFirst({
         where: eq(emailVerificationTokens.tokenHash, tokenHash),
       })
-      return row ?? null
+      // `purpose` is a varchar in MySQL, so narrow it at the boundary. An
+      // unrecognised value stays unrecognised and every purpose check rejects
+      // it, which is the safe direction.
+      return row ? { ...row, purpose: row.purpose as TokenPurpose } : null
     },
     async consume(id) {
       const [res] = await db.update(emailVerificationTokens)

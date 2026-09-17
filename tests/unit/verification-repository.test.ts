@@ -6,6 +6,7 @@ function rec(id: string) {
     id,
     userId: 'u1',
     email: 'a@b.com',
+    purpose: 'verify_email' as const,
     tokenHash: `hash-${id}`,
     expiresAt: new Date(Date.now() + 60_000),
   }

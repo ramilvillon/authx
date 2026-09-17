@@ -122,7 +122,16 @@ Deno.test('PATCH /users/:id rejects an empty body, accepts a valid update', asyn
   const ok = await app.request(`/users/${id}`, {
     method: 'PATCH',
     headers: { Authorization, 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'a2@b.com' }),
+    body: JSON.stringify({ name: 'Ada L' }),
   })
   assertEquals(ok.status, 200)
+
+  // A self-service email change is 202, not 200: it is held until confirmed
+  // from the current address. Covered in confirmed-operations.test.ts.
+  const deferred = await app.request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'a2@b.com' }),
+  })
+  assertEquals(deferred.status, 202)
 })

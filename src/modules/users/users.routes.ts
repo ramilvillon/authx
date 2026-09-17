@@ -146,6 +146,11 @@ const users = new Hono<AppEnv>()
           description: 'The updated user',
           content: json(resolver(publicUserSchema)),
         },
+        202: {
+          description:
+            'Applied, except a self-service email change, which is held until confirmed from the current address',
+          content: json(resolver(publicUserSchema)),
+        },
         400: {
           description:
             'Invalid input, or a self-service password change with no current_password',
@@ -165,15 +170,31 @@ const users = new Hono<AppEnv>()
     validator('json', updateUserSchema),
     async (c) => {
       const id = c.req.param('id')
-      return c.json(
-        await c.var.userService.update(id, c.req.valid('json'), {
-          // Self-service is the only path where a password challenge is both
-          // possible and meaningful; reaching someone else's record already
-          // required users:update:any on a platform-audience token.
-          requireCurrentPassword: id === c.var.user.id,
-        }),
-        200,
-      )
+      const isSelf = id === c.var.user.id
+      const { email, ...rest } = c.req.valid('json')
+      // A self-service email change is authorised out of band: the confirming
+      // link goes to the account's CURRENT address, which the app service
+      // holding this access token cannot read. Every other field applies now.
+      // An operator on users:update:any is exempt, as with the password
+      // challenge -- that path is already bound to the platform audience.
+      const deferEmail = isSelf && email !== undefined
+      const user = Object.keys(deferEmail ? rest : c.req.valid('json')).length
+        ? await c.var.userService.update(
+          id,
+          deferEmail ? rest : c.req.valid('json'),
+          {
+            // Self-service is the only path where a password challenge is both
+            // possible and meaningful; reaching someone else's record already
+            // required users:update:any on a platform-audience token.
+            requireCurrentPassword: isSelf,
+          },
+        )
+        : await c.var.userService.getById(id)
+      if (deferEmail) {
+        await c.var.verificationService.startEmailChange(id, email!)
+        return c.json(user, 202)
+      }
+      return c.json(user, 200)
     },
   )
   .delete(
@@ -184,7 +205,11 @@ const users = new Hono<AppEnv>()
       security: [{ bearerAuth: [] }],
       parameters: [idParam],
       responses: {
-        204: { description: 'Deleted' },
+        202: {
+          description:
+            'Self-service: a confirmation link was sent to the current address; the account is not deleted yet',
+        },
+        204: { description: 'Deleted (operator path)' },
         401: { description: 'Missing or invalid access token' },
         403: { description: 'Not the owner and missing users:delete:any' },
         404: { description: 'User not found' },
@@ -193,7 +218,15 @@ const users = new Hono<AppEnv>()
     requireAuth,
     requireSelfOrPermission('id', 'users:delete:any'),
     async (c) => {
-      await c.var.userService.remove(c.req.param('id'))
+      const id = c.req.param('id')
+      // Deleting your own account is authorised out of band, for the same
+      // reason an email change is: the access token proves who you are, not
+      // that you asked. An operator on users:delete:any is exempt.
+      if (id === c.var.user.id) {
+        await c.var.verificationService.startAccountDeletion(id)
+        return c.json({ status: 'confirmation_sent' }, 202)
+      }
+      await c.var.userService.remove(id)
       return c.body(null, 204)
     },
   )
