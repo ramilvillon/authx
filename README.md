@@ -88,35 +88,41 @@ curl localhost:3000/health      # {"status":"ok"}
 Copy `.env.example` to `.env` and adjust. Config is validated at startup
 (`src/config.ts`); missing required values fail fast.
 
-| Variable                   | Default                              | Notes                                                                                           |
-| -------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `PORT`                     | `3000`                               | HTTP port                                                                                       |
-| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                              |
-| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                      |
-| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                     |
-| `DB_USER`                  | —                                    | **required**; MySQL user                                                                        |
-| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                  |
-| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                               |
-| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                     |
-| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                        |
-| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                     |
-| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                       |
-| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                              |
-| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                               |
-| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                 |
-| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                |
-| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                  |
-| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                           |
-| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                      |
-| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                              |
-| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window |
-| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                        |
-| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                          |
-| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                      |
-| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                            |
-| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                           |
-| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                              |
-| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                     |
+| Variable                   | Default                              | Notes                                                                                                           |
+| -------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `PORT`                     | `3000`                               | HTTP port                                                                                                       |
+| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                                              |
+| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                                      |
+| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                                     |
+| `DB_USER`                  | —                                    | **required**; MySQL user                                                                                        |
+| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                                  |
+| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                                               |
+| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                                     |
+| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                                        |
+| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                                     |
+| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                                       |
+| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                                              |
+| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                                               |
+| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                                 |
+| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                                |
+| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                                  |
+| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                                           |
+| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                                      |
+| `SMTP_HOST`                | _(empty)_                            | the switch: set it to send over SMTP, leave empty for the log sender. `.env.example` sets `127.0.0.1` (Mailpit) |
+| `SMTP_PORT`                | `587`                                | `587` upgrades with STARTTLS, `465` needs `SMTP_SECURE=true`. `.env.example` sets `1025` (Mailpit)              |
+| `SMTP_USER`                | _(empty)_                            | SMTP username; empty sends without auth (Mailpit needs none)                                                    |
+| `SMTP_PASS`                | _(empty)_                            | SMTP password                                                                                                   |
+| `SMTP_SECURE`              | `false`                              | `true` for implicit TLS on connect (port 465)                                                                   |
+| `EMAIL_FROM`               | _(empty)_                            | sender address, e.g. `"authx <no-reply@example.com>"`                                                           |
+| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                                              |
+| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window                 |
+| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                                        |
+| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                                          |
+| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                      |
+| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                            |
+| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                           |
+| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                              |
+| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                                     |
 
 `TRUST_PROXY` must be the **exact** number of reverse proxies in front of this
 service (`2` behind Cloudflare -> nginx, `0` when directly exposed). Proxies
