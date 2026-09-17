@@ -365,8 +365,10 @@ export function createAuthService(deps: {
       if (record.redirectUri !== input.redirectUri) {
         throw AppError.of('invalid_grant')
       }
-      // Confidential clients must authenticate (secret stored as sha256, like Phase 1).
-      if (service.type === 'confidential') {
+      // Every client except a public one must authenticate (secret stored as
+      // sha256). Allow-list on 'public': `type` is a free varchar, so a value the
+      // API never writes fails closed instead of skipping the secret.
+      if (service.type !== 'public') {
         const ok = service.clientSecretHash !== null &&
           input.clientSecret !== undefined &&
           (await hashToken(input.clientSecret)) === service.clientSecretHash

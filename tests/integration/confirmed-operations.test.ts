@@ -184,7 +184,7 @@ Deno.test('an operator changes an email and deletes an account with no confirmat
   await seedDefaultService(orgRepo, id)
   // users:update:any / users:delete:any are already bound to the platform
   // audience, so this path is not the one F6 is about.
-  const Authorization = `Bearer ${await seedPlatformAdmin([
+  const Authorization = `Bearer ${await seedPlatformAdmin(userRepo, [
     'users:update:any',
     'users:delete:any',
   ])}`

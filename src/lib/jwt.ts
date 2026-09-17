@@ -30,7 +30,7 @@ export async function signAccessToken(
     scope: string
     clientId: string
     oidcScope?: string
-    subType?: 'user' | 'service'
+    subType: 'user' | 'service'
   },
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -42,7 +42,7 @@ export async function signAccessToken(
     scope: opts.scope,
     client_id: opts.clientId,
     ...(opts.oidcScope ? { oidc_scope: opts.oidcScope } : {}),
-    ...(opts.subType ? { sub_type: opts.subType } : {}),
+    sub_type: opts.subType,
     iat: now,
     exp: now + opts.ttlSeconds,
   }

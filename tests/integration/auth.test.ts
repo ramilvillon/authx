@@ -94,6 +94,54 @@ Deno.test('deleting the user revokes its in-flight access token', async () => {
   )
 })
 
+// sub_type is an allow-list: only 'service' may skip the user-row check. A token
+// without it (or with a value we never mint) must not outlive its subject.
+Deno.test('a token without sub_type does not survive its user being deleted', async () => {
+  const { app, userRepo } = makeTestApp()
+  const userId = await register(app)
+  const Authorization = `Bearer ${await signAccessToken(
+    {
+      sub: userId,
+      issuer: 'http://test.local',
+      privateKeyPem: keySet.privateKeyPem,
+      kid: keySet.kid,
+      ttlSeconds: 900,
+      aud: 'test-service',
+      org: 'o1',
+      scope: '',
+      clientId: 'cid',
+    } as Parameters<typeof signAccessToken>[0],
+  )}`
+
+  await userRepo.delete(userId)
+  assertEquals(
+    (await app.request('/users/me', { headers: { Authorization } })).status,
+    401,
+  )
+})
+
+// The other side of that allow-list: a client-credentials token names an
+// app-service, never a user row, and must still authenticate.
+Deno.test('a service token authenticates without a user row', async () => {
+  const { app } = makeTestApp()
+  const Authorization = `Bearer ${await signAccessToken({
+    sub: 'some-app-service-id',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: 'platform',
+    org: 'platform',
+    scope: 'users:list',
+    clientId: 'cid_m2m',
+    subType: 'service',
+  })}`
+  assertEquals(
+    (await app.request('/users', { headers: { Authorization } })).status,
+    200,
+  )
+})
+
 Deno.test('/users/me without token -> 401', async () => {
   const { app } = makeTestApp()
   const res = await app.request('/users/me')
@@ -135,6 +183,7 @@ Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () 
     org: 'o1',
     scope: '',
     clientId: 'cid',
+    subType: 'user',
   })
   assertEquals(
     (await app.request('/users/me', {
@@ -154,6 +203,7 @@ Deno.test('/users/me rejects tampered, wrong-key, and expired tokens', async () 
     org: 'o1',
     scope: '',
     clientId: 'cid',
+    subType: 'user',
   })
   assertEquals(
     (await app.request('/users/me', {

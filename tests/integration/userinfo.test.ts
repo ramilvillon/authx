@@ -24,6 +24,7 @@ function userToken(sub: string, oidcScope?: string) {
     org: 'o',
     scope: '',
     clientId: 'cid_app',
+    subType: 'user',
     oidcScope,
   })
 }
