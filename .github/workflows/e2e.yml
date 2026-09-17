@@ -66,7 +66,11 @@ jobs:
       # generate a throwaway pair for this run.
       - name: Configure environment
         run: |
-          grep -v '^JWT_PRIVATE_KEY=\|^JWT_PUBLIC_KEY=\|^SMTP_HOST=' .env.example > .env
+          # Strip EVERY key this step overrides, not just some: --env-file is
+          # first-wins, so any placeholder left behind silently beats the value
+          # appended below. Leaving SMTP_PORT=587 in place is exactly how the
+          # first attempt at this connected to 587 and got ECONNREFUSED.
+          grep -vE '^(JWT_PRIVATE_KEY|JWT_PUBLIC_KEY|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|SMTP_SECURE|EMAIL_FROM)=' .env.example > .env
           deno task keys:gen >> .env
           # Point the SMTP sender at the mailpit service. SMTP_HOST is what
           # switches deps.ts from the log sender to the real one, so setting it
