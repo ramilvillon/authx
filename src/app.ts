@@ -55,6 +55,16 @@ export function createApp(deps: Deps) {
       '/verify-email/resend',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
+    // Both send mail or hash a password on an unauthenticated request, so they
+    // belong with the other credential paths.
+    .use(
+      '/password-reset/request',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
+    .use(
+      '/password-reset',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
     .get('/health', (c) => c.json({ status: 'ok' }))
     .route('/users', users)
     .route('/oauth', auth)

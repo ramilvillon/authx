@@ -70,6 +70,8 @@ export function makeTestDeps(
   const verificationService = createVerificationService({
     verificationRepo,
     userRepo,
+    tokenRepo,
+    sessionRepo,
     emailSender,
     config,
   })

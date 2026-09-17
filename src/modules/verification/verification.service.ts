@@ -1,5 +1,8 @@
 import type { Config } from '../../config.ts'
 import type { UserRepository } from '../users/users.repository.ts'
+import type { RefreshTokenRepository } from '../auth/token.repository.ts'
+import type { SessionRepository } from '../auth/session.repository.ts'
+import { hashPassword } from '../../lib/password.ts'
 import type { EmailSender } from '../../lib/email.ts'
 import type {
   TokenPurpose,
@@ -13,10 +16,19 @@ export type VerificationService = ReturnType<typeof createVerificationService>
 export function createVerificationService(deps: {
   verificationRepo: VerificationTokenRepository
   userRepo: UserRepository
+  tokenRepo: RefreshTokenRepository
+  sessionRepo: SessionRepository
   emailSender: EmailSender
   config: Config
 }) {
-  const { verificationRepo, userRepo, emailSender, config } = deps
+  const {
+    verificationRepo,
+    userRepo,
+    tokenRepo,
+    sessionRepo,
+    emailSender,
+    config,
+  } = deps
 
   // Local function (not a `this` method) so `resend` can call it without
   // this-binding fragility — matches the codebase's closure style.
@@ -91,7 +103,14 @@ export function createVerificationService(deps: {
     // repeating a destructive action.
     async confirm(token: string): Promise<TokenPurpose> {
       const record = await verificationRepo.findByHash(await hashToken(token))
-      if (!record || record.purpose === 'verify_email') {
+      // Allow-list, not a deny-list: this endpoint acts immediately, so a
+      // purpose it does not handle (a password reset, which needs a form) would
+      // otherwise be consumed here and burned without doing anything.
+      if (
+        !record ||
+        (record.purpose !== 'email_change' &&
+          record.purpose !== 'account_deletion')
+      ) {
         throw AppError.of('invalid_verification_link')
       }
       if (record.consumedAt) throw AppError.of('invalid_verification_link')
@@ -124,6 +143,45 @@ export function createVerificationService(deps: {
         await userRepo.softDelete(user.id)
       }
       return record.purpose
+    },
+    // Always resolves, whether or not the address is registered: the response
+    // must not reveal which. Mirrors `resend`.
+    async startPasswordReset(email: string): Promise<void> {
+      const user = await userRepo.findByEmail(email)
+      if (!user) return
+      // Mail the STORED address, not the request string: the lookup is
+      // collation-insensitive but the token is bound to one exact spelling.
+      await startConfirmation(user.id, 'password_reset', user.email, user.email)
+    },
+    async resetPassword(token: string, password: string): Promise<void> {
+      const record = await verificationRepo.findByHash(await hashToken(token))
+      if (!record || record.purpose !== 'password_reset') {
+        throw AppError.of('invalid_verification_link')
+      }
+      if (record.consumedAt) throw AppError.of('invalid_verification_link')
+      if (record.expiresAt.getTime() <= Date.now()) {
+        throw AppError.of('verification_link_expired')
+      }
+      // findById filters soft-deleted rows, so a deleted account cannot reset
+      // its way back into existence.
+      const user = await userRepo.findById(record.userId)
+      if (!user || user.email !== record.email) {
+        throw AppError.of('invalid_verification_link')
+      }
+      // Consume before acting, so a replay loses the race.
+      if (!(await verificationRepo.consume(record.id))) {
+        throw AppError.of('invalid_verification_link')
+      }
+      // emailVerified: clicking a link delivered to this address proves control
+      // of it -- the same proof /verify-email asks for.
+      await userRepo.update(user.id, {
+        passwordHash: await hashPassword(password),
+        emailVerified: true,
+      })
+      // Reset is what someone reaches for BECAUSE they think they are
+      // compromised. Leaving the attacker's credentials alive defeats it.
+      await tokenRepo.revokeAllForUser(user.id)
+      await sessionRepo.revokeAllForUser(user.id)
     },
     async verifyEmail(token: string): Promise<void> {
       const record = await verificationRepo.findByHash(await hashToken(token))

@@ -1,6 +1,10 @@
 // Redemption is purpose-scoped: a token is only ever valid at the path that
 // matches the purpose it was minted for.
-export type TokenPurpose = 'verify_email' | 'email_change' | 'account_deletion'
+export type TokenPurpose =
+  | 'verify_email'
+  | 'email_change'
+  | 'account_deletion'
+  | 'password_reset'
 
 export type VerificationTokenRecord = {
   id: string
