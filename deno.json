@@ -6,6 +6,7 @@
     "test:unit": "deno test -A tests/unit",
     "test:integration": "deno test -A tests/integration",
     "test:e2e": "deno test -A --env-file=.env tests/e2e",
+    "test:integration:mysql": "DB_NAME=app_test TEST_DB=mysql deno test -A --env-file=.env tests/integration",
     "check": "deno check src/ tests/",
     "lint": "deno lint",
     "fmt": "deno fmt",

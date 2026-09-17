@@ -1,7 +1,7 @@
 # Local development. Thin wrapper over `docker compose` and the deno tasks in
 # deno.json — those stay the source of truth; this only sequences them.
 .DEFAULT_GOAL := help
-.PHONY: help setup up stop down status logs db-shell studio migrate seed bootstrap dev test check db-reset
+.PHONY: help setup up stop down status logs db-shell studio migrate seed bootstrap dev test test-db check db-reset
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -48,6 +48,14 @@ dev: up ## Run the API with --watch
 
 test: ## Unit + integration tests (no containers needed)
 	deno task test:unit && deno task test:integration
+
+# A throwaway database, recreated every run: the suite truncates every table
+# before each test, and snapshots the seeded state once per database.
+test-db: up ## Integration tests against MySQL (fresh app_test database)
+	docker compose exec -T mysql mysql -uroot -proot -e "DROP DATABASE IF EXISTS app_test; CREATE DATABASE app_test; GRANT ALL ON app_test.* TO 'app'@'%';"
+	DB_NAME=app_test deno task db:migrate
+	DB_NAME=app_test BOOTSTRAP_ADMIN_EMAIL= BOOTSTRAP_ADMIN_PASSWORD= deno task db:seed
+	deno task test:integration:mysql
 
 check: ## fmt, lint, typecheck
 	deno task check:all

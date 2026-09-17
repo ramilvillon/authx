@@ -323,6 +323,7 @@ deno task test              # run every test (deno test -A)
 deno task test:unit         # tests/unit — pure logic, no I/O
 deno task test:integration  # tests/integration — full app via app.request
 deno task test:e2e          # tests/e2e — real MySQL (loads .env)
+make test-db                # tests/integration again, on real MySQL (fresh app_test database)
 deno task check:all         # fmt --check + lint + type-check (CI/pre-commit gate)
 deno task fmt               # format
 deno task lint              # lint
@@ -339,6 +340,14 @@ Tests are grouped by scope under `tests/`:
 `deno task test` runs all of them; the e2e tests self-skip when `DB_NAME` is
 unset (so they're ignored unless you run `deno task test:e2e`, which loads
 `.env`). Shared fixtures live in `tests/helpers.ts`.
+
+The integration suite also runs against MySQL: `make test-db` recreates an
+`app_test` database, migrates and seeds it, and runs `tests/integration` with
+`TEST_DB=mysql`, which swaps the in-memory fakes for the Drizzle repositories
+and restores the seeded tables before every test. The fakes are more permissive
+than MySQL, so a flow can pass in-memory and fail here. It refuses any `DB_NAME`
+not ending in `_test`, because it truncates every table. CI runs it in the e2e
+workflow.
 
 ### Pre-commit hook
 
