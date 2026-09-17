@@ -1,9 +1,10 @@
-# deno-hono-api-starter
+# authx
 
-A production-shaped REST API starter built with Deno, Hono, and TypeScript.
-Factory-function composition (no inheritance), dependencies flow inward
-(`config → db → repositories → services → deps`), and route modules stay
-dependency-free so the `hc` RPC client keeps full type inference.
+A self-hosted auth server for TypeScript service backends: users, organizations,
+and per-service RBAC, issuing RS256 access tokens scoped to one service's
+audience. Services verify tokens locally against the published JWKS, with no
+call back to authx; machine-to-machine callers get the same tokens through
+`client_credentials`. Built with Deno, Hono, Drizzle, and MySQL.
 
 ## Features
 
@@ -21,9 +22,10 @@ dependency-free so the `hc` RPC client keeps full type inference.
 - **SSO (Authorization Code + PKCE)** — `GET/POST /oauth/authorize` with a
   server-side session; `grant_type=authorization_code` on `/oauth/token`
   exchanges a one-time PKCE-protected code for audience-scoped tokens
-- **Email verification** — registration sends a single-use verification link via
-  a pluggable EmailSender (log default); GET /verify-email flips email_verified
-  true
+- **Email flows over SMTP** — verification on registration, password reset, and
+  confirmed email change and account deletion, all by single-use emailed links
+- **Soft-deleted accounts** — a deleted account is kept for
+  `ACCOUNT_PURGE_GRACE`, then erased by `db:prune`
 - **Google social login** — verified-email requirement (`/oauth/google`)
 - **M2M (client_credentials)** — a confidential service exchanges client_id +
   client_secret for a short-lived audience-scoped token whose scope is its RBAC
@@ -41,7 +43,9 @@ dependency-free so the `hc` RPC client keeps full type inference.
 ## Prerequisites
 
 - [asdf](https://asdf-vm.com/) (pins Deno, Node, gitleaks via `.tool-versions`)
-- Docker (for MySQL)
+- A Docker engine for MySQL and Mailpit: Docker Desktop, or
+  [Colima](https://github.com/abiosoft/colima) (`colima start` before any `make`
+  target that touches containers)
 
 ```bash
 asdf install          # installs deno, nodejs, gitleaks at pinned versions
@@ -51,16 +55,29 @@ npm install           # installs husky and activates the pre-commit hook
 ## Setup
 
 ```bash
-cp .env.example .env
-deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
-docker compose up -d mysql      # start MySQL
-docker compose up -d mailpit    # optional: local mail catcher, inbox at :8025
-deno task db:migrate            # apply Drizzle migrations
-deno task db:generate <name>    # generate a migration, e.g. db:generate users_deleted_at
-deno task db:seed               # seed the platform tenant + bootstrap admin
-deno task db:prune              # delete expired rows + erase deleted accounts (run on a schedule)
-deno task dev                   # start the API with --watch
+make bootstrap   # .env with a fresh JWT keypair, MySQL + Mailpit, migrations, seed
+make dev         # start the API with --watch
 ```
+
+Set `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` in `.env` and re-run
+`make seed` to get a platform admin. `make` alone lists every target:
+
+| Target                                 | What it does                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `make setup`                           | create `.env` from `.env.example` + JWT keypair (skips if present)     |
+| `make up` / `stop` / `status` / `logs` | start (and wait for healthy) / stop, keeping data / list / follow logs |
+| `make down`                            | remove containers **and the database volume**                          |
+| `make migrate` / `seed`                | apply migrations / seed the platform tenant + bootstrap admin          |
+| `make db-reset`                        | wipe the database and rebuild it from migrations + seed                |
+| `make studio` / `db-shell`             | browse the DB in Drizzle Studio / open a mysql shell                   |
+| `make test` / `check`                  | unit + integration tests / fmt, lint, typecheck                        |
+
+Don't build `.env` with `cp .env.example .env && deno task keys:gen >> .env`:
+`--env-file` keeps the first value of a duplicated key, so the template's empty
+`JWT_PRIVATE_KEY=` wins and the keys load empty. `make setup` strips those lines
+first.
+
+Mail is delivered to Mailpit by default; read it at http://localhost:8025.
 
 The server listens on `PORT` (default `3000`). Smoke test:
 
@@ -73,35 +90,41 @@ curl localhost:3000/health      # {"status":"ok"}
 Copy `.env.example` to `.env` and adjust. Config is validated at startup
 (`src/config.ts`); missing required values fail fast.
 
-| Variable                   | Default                              | Notes                                                                                           |
-| -------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `PORT`                     | `3000`                               | HTTP port                                                                                       |
-| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                              |
-| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                      |
-| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                     |
-| `DB_USER`                  | —                                    | **required**; MySQL user                                                                        |
-| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                  |
-| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                               |
-| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                     |
-| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                        |
-| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                     |
-| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                       |
-| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                              |
-| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                               |
-| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                 |
-| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                |
-| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                  |
-| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                           |
-| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                      |
-| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                              |
-| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window |
-| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                        |
-| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                          |
-| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                      |
-| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                            |
-| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                           |
-| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                              |
-| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                     |
+| Variable                   | Default                              | Notes                                                                                                           |
+| -------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `PORT`                     | `3000`                               | HTTP port                                                                                                       |
+| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                                              |
+| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                                      |
+| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                                     |
+| `DB_USER`                  | —                                    | **required**; MySQL user                                                                                        |
+| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                                  |
+| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                                               |
+| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                                     |
+| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                                        |
+| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                                     |
+| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                                       |
+| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                                              |
+| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                                               |
+| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                                 |
+| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                                |
+| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                                  |
+| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                                           |
+| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                                      |
+| `SMTP_HOST`                | _(empty)_                            | the switch: set it to send over SMTP, leave empty for the log sender. `.env.example` sets `127.0.0.1` (Mailpit) |
+| `SMTP_PORT`                | `587`                                | `587` upgrades with STARTTLS, `465` needs `SMTP_SECURE=true`. `.env.example` sets `1025` (Mailpit)              |
+| `SMTP_USER`                | _(empty)_                            | SMTP username; empty sends without auth (Mailpit needs none)                                                    |
+| `SMTP_PASS`                | _(empty)_                            | SMTP password                                                                                                   |
+| `SMTP_SECURE`              | `false`                              | `true` for implicit TLS on connect (port 465)                                                                   |
+| `EMAIL_FROM`               | _(empty)_                            | sender address, e.g. `"authx <no-reply@example.com>"`                                                           |
+| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                                              |
+| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window                 |
+| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                                        |
+| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                                          |
+| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                      |
+| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                            |
+| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                           |
+| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                              |
+| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                                     |
 
 `TRUST_PROXY` must be the **exact** number of reverse proxies in front of this
 service (`2` behind Cloudflare -> nginx, `0` when directly exposed). Proxies
@@ -147,9 +170,10 @@ are rejected.
 | `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                                                                                                        |
 | `GET`    | `/docs`                             | —                                  | Scalar API reference UI                                                                                                                      |
 
-`POST /oauth/token` accepts an optional `audience` (a service's `audience`
-string); the returned access token then carries exactly the permissions that
-user has in that service. Omit it for the default audience.
+`POST /oauth/token` requires an `audience` (a service's `audience` string) on
+the password and client_credentials grants; the returned access token carries
+exactly the permissions that user has in that service. A request without it is
+rejected with 400.
 
 Permission keys are defined per service, so the `users:*` permissions above
 count only on a token minted for the reserved `platform` audience — the same key
@@ -189,7 +213,7 @@ Example password-grant flow:
 # obtain a token pair
 curl -X POST localhost:3000/oauth/token \
   -H 'content-type: application/json' \
-  -d '{"grant_type":"password","username":"a@b.com","password":"pw123456"}'
+  -d '{"grant_type":"password","username":"a@b.com","password":"pw123456","audience":"platform"}'
 
 # call a protected route
 curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
@@ -244,12 +268,12 @@ is surfaced in both the id_token and the UserInfo response.
 
 ### Email verification
 
-Registration triggers a verification email. The default `EmailSender` only
-records that a mail was sent — the link embeds a live verification token and is
-never logged unless you set `EMAIL_LOG_LINKS=true` in your `.env` for local
-development. Implement `EmailSender` in `src/lib/email.ts` for real SMTP/webhook
-delivery. Clicking the link sets `email_verified: true`, which is surfaced in
-the OIDC id_token and UserInfo endpoint. The resend endpoint
+Registration triggers a verification email. With `SMTP_HOST` set it is sent over
+SMTP (locally, to Mailpit); with it empty the log sender only records that a
+mail was sent — the link embeds a live verification token and is never logged
+unless you set `EMAIL_LOG_LINKS=true` in your `.env` for local development.
+Clicking the link sets `email_verified: true`, which is surfaced in the OIDC
+id_token and UserInfo endpoint. The resend endpoint
 (`POST /verify-email/resend`) is anti-enumeration — it always returns 204
 regardless of whether the address exists or is already verified. Changing a
 user's email resets `email_verified` to false. Verification is non-blocking: it
@@ -328,5 +352,6 @@ unset (so they're ignored unless you run `deno task test:e2e`, which loads
 deno task db:generate   # generate a migration from schema changes
 deno task db:migrate    # apply migrations
 deno task db:seed       # seed the platform tenant + bootstrap admin
+deno task db:prune      # delete expired rows + erase deleted accounts (run on a schedule)
 deno task keys:gen      # print a fresh RS256 keypair as JWT_PRIVATE_KEY/JWT_PUBLIC_KEY env lines
 ```

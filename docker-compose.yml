@@ -8,7 +8,9 @@ services:
       MYSQL_PASSWORD: app
     ports: ['${MYSQL_PORT:-3306}:3306']
     healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uapp', '-papp']
+      # 127.0.0.1, not localhost: localhost pings over the socket, which answers
+      # during first-boot init while the TCP port is still closed.
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uapp', '-papp']
       interval: 5s
       timeout: 5s
       retries: 10
