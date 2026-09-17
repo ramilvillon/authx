@@ -13,7 +13,10 @@ import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { createAdminService } from '../src/modules/admin/admin.service.ts'
 import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
-import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
+import {
+  createInMemorySocialAccountRepository,
+  type SocialAccountRepository,
+} from '../src/modules/auth/social.repository.ts'
 import type { TokenPurpose } from '../src/modules/verification/verification.repository.ts'
 import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
@@ -66,22 +69,20 @@ export function makeTestDeps(
     emailSender,
     config,
   })
-  const social = new Map<string, string>()
-  const socialRepo: SocialAccountRepository = {
-    findByProviderAccount: (p, id) =>
-      Promise.resolve(
-        social.has(`${p}:${id}`) ? { userId: social.get(`${p}:${id}`)! } : null,
-      ),
-    link: (a) => {
-      social.set(`${a.provider}:${a.providerAccountId}`, a.userId)
-      return Promise.resolve()
-    },
-  }
+  const socialRepo = createInMemorySocialAccountRepository()
   const deps: Deps = {
     config,
     keySet,
     rateStore: createMemoryRateLimitStore(),
-    userService: createUserService({ repo: userRepo, tokenRepo, sessionRepo }),
+    userService: createUserService({
+      repo: userRepo,
+      tokenRepo,
+      sessionRepo,
+      authCodeRepo,
+      verificationRepo,
+      socialRepo,
+      orgRepo,
+    }),
     authService: createAuthService({
       userRepo,
       tokenRepo,

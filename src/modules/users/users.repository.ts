@@ -42,6 +42,9 @@ export type UserRepository = {
   delete(id: string): Promise<boolean>
   list(): Promise<UserRecord[]>
   assignRole(userId: string, roleName: string): Promise<void>
+  // user_roles has no foreign key to users, so role grants outlive a deleted
+  // account and would be inherited by any future row reusing the id.
+  removeAllRoles(userId: string): Promise<number>
 }
 
 // In-memory test double for UserRepository: lets the unit/integration suite
@@ -105,6 +108,11 @@ export function createInMemoryUserRepository(
       set.add(roleName)
       userRoleNames.set(userId, set)
       return Promise.resolve()
+    },
+    removeAllRoles(userId) {
+      const n = userRoleNames.get(userId)?.size ?? 0
+      userRoleNames.delete(userId)
+      return Promise.resolve(n)
     },
   }
 }

@@ -20,6 +20,9 @@ export type VerificationTokenRepository = {
   findByHash(tokenHash: string): Promise<VerificationTokenRecord | null>
   // Atomic single-use; false = already consumed.
   consume(id: string): Promise<boolean>
+  // No foreign keys in the schema: a deleted user's rows survive unless
+  // something removes them. Returns the number of rows removed.
+  deleteAllForUser(userId: string): Promise<number>
 }
 
 // In-memory test double. Mirror behavior in verification.repository.drizzle.ts.
@@ -41,6 +44,16 @@ export function createInMemoryVerificationTokenRepository(): VerificationTokenRe
       if (!t || t.consumedAt) return Promise.resolve(false)
       byId.set(id, { ...t, consumedAt: new Date() })
       return Promise.resolve(true)
+    },
+    deleteAllForUser(userId) {
+      let n = 0
+      for (const [k, v] of byId) {
+        if (v.userId === userId) {
+          byId.delete(k)
+          n++
+        }
+      }
+      return Promise.resolve(n)
     },
   }
 }

@@ -1,3 +1,4 @@
+import { createInMemoryOrgRepository } from '../../src/modules/orgs/orgs.repository.ts'
 import { assertEquals, assertRejects } from '@std/assert'
 import { createInMemoryUserRepository } from '../../src/modules/users/users.repository.ts'
 import { createUserService } from '../../src/modules/users/users.service.ts'
@@ -5,6 +6,39 @@ import { updateUserSchema } from '../../src/modules/users/users.schema.ts'
 import { verifyPassword } from '../../src/lib/password.ts'
 import { createInMemoryRefreshTokenRepository } from '../../src/modules/auth/token.repository.ts'
 import { createInMemorySessionRepository } from '../../src/modules/auth/session.repository.ts'
+import { createInMemoryAuthCodeRepository } from '../../src/modules/auth/authcode.repository.ts'
+import { createInMemoryVerificationTokenRepository } from '../../src/modules/verification/verification.repository.ts'
+import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
+
+// Every repository that holds rows keyed by user id, so a delete can be checked
+// against all of them at once.
+function fullService() {
+  const repo = createInMemoryUserRepository({ user: [] })
+  const tokenRepo = createInMemoryRefreshTokenRepository()
+  const sessionRepo = createInMemorySessionRepository()
+  const authCodeRepo = createInMemoryAuthCodeRepository()
+  const verificationRepo = createInMemoryVerificationTokenRepository()
+  const socialRepo = createInMemorySocialAccountRepository()
+  const orgRepo = createInMemoryOrgRepository()
+  return {
+    repo,
+    orgRepo,
+    tokenRepo,
+    sessionRepo,
+    authCodeRepo,
+    verificationRepo,
+    socialRepo,
+    svc: createUserService({
+      repo,
+      tokenRepo,
+      sessionRepo,
+      authCodeRepo,
+      verificationRepo,
+      socialRepo,
+      orgRepo,
+    }),
+  }
+}
 
 function service(repo = createInMemoryUserRepository({ user: [] })) {
   const tokenRepo = createInMemoryRefreshTokenRepository()
@@ -13,7 +47,15 @@ function service(repo = createInMemoryUserRepository({ user: [] })) {
     repo,
     tokenRepo,
     sessionRepo,
-    svc: createUserService({ repo, tokenRepo, sessionRepo }),
+    svc: createUserService({
+      repo,
+      tokenRepo,
+      sessionRepo,
+      authCodeRepo: createInMemoryAuthCodeRepository(),
+      verificationRepo: createInMemoryVerificationTokenRepository(),
+      socialRepo: createInMemorySocialAccountRepository(),
+      orgRepo: createInMemoryOrgRepository(),
+    }),
   }
 }
 
@@ -171,4 +213,131 @@ Deno.test('changing email resets emailVerified to false', async () => {
     requireCurrentPassword: true,
   })
   assertEquals((await repo.findById('u1'))?.emailVerified, false)
+})
+
+Deno.test('deleting a user purges every row that referenced them', async () => {
+  const ctx = fullService()
+  const now = new Date()
+  const later = new Date(Date.now() + 60_000)
+  const user = await ctx.svc.register({
+    email: 'a@b.com',
+    password: 'pw123456',
+  })
+  const other = await ctx.svc.register({
+    email: 'b@b.com',
+    password: 'pw123456',
+  })
+
+  for (const id of [user.id, other.id]) {
+    await ctx.tokenRepo.create({
+      id: `rt-${id}`,
+      userId: id,
+      appServiceId: 's1',
+      tokenHash: `rt-hash-${id}`,
+      expiresAt: later,
+    })
+    await ctx.sessionRepo.create({
+      id: `se-${id}`,
+      userId: id,
+      tokenHash: `se-hash-${id}`,
+      expiresAt: later,
+    })
+    await ctx.authCodeRepo.create({
+      id: `ac-${id}`,
+      userId: id,
+      appServiceId: 's1',
+      codeHash: `ac-hash-${id}`,
+      redirectUri: 'https://app.example/cb',
+      scope: '',
+      codeChallenge: 'c',
+      codeChallengeMethod: 'S256',
+      nonce: null,
+      expiresAt: later,
+      authTime: now,
+    })
+    await ctx.verificationRepo.create({
+      id: `ev-${id}`,
+      userId: id,
+      email: 'x@b.com',
+      purpose: 'verify_email',
+      tokenHash: `ev-hash-${id}`,
+      expiresAt: later,
+    })
+    await ctx.socialRepo.link({
+      id: `sa-${id}`,
+      userId: id,
+      provider: 'google',
+      providerAccountId: `g-${id}`,
+    })
+  }
+
+  await ctx.svc.remove(user.id)
+
+  // The schema has no foreign keys, so nothing cleans these up for us.
+  assertEquals(await ctx.tokenRepo.findByHash(`rt-hash-${user.id}`), null)
+  assertEquals(
+    await ctx.sessionRepo.findActiveByTokenHash(`se-hash-${user.id}`),
+    null,
+  )
+  assertEquals(
+    await ctx.authCodeRepo.findByCodeHash(`ac-hash-${user.id}`),
+    null,
+  )
+  assertEquals(
+    await ctx.verificationRepo.findByHash(`ev-hash-${user.id}`),
+    null,
+  )
+  assertEquals(
+    await ctx.socialRepo.findByProviderAccount('google', `g-${user.id}`),
+    null,
+  )
+  assertEquals(
+    (await ctx.repo.findWithAccessById(user.id))?.roles ?? null,
+    null,
+  )
+
+  // Only that user's rows: the other account is untouched.
+  assertEquals(!!(await ctx.tokenRepo.findByHash(`rt-hash-${other.id}`)), true)
+  assertEquals(
+    !!(await ctx.sessionRepo.findActiveByTokenHash(`se-hash-${other.id}`)),
+    true,
+  )
+  assertEquals(
+    !!(await ctx.authCodeRepo.findByCodeHash(`ac-hash-${other.id}`)),
+    true,
+  )
+  assertEquals(
+    !!(await ctx.verificationRepo.findByHash(`ev-hash-${other.id}`)),
+    true,
+  )
+  assertEquals(
+    !!(await ctx.socialRepo.findByProviderAccount('google', `g-${other.id}`)),
+    true,
+  )
+})
+
+Deno.test('deleting a user removes their org memberships too', async () => {
+  const ctx = fullService()
+  const user = await ctx.svc.register({
+    email: 'm@b.com',
+    password: 'pw123456',
+  })
+  const org = await ctx.orgRepo.createOrg({
+    id: crypto.randomUUID(),
+    slug: 'acme',
+    name: 'Acme',
+    createdAt: new Date(),
+  })
+  await ctx.orgRepo.addMember({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    orgId: org.id,
+    createdAt: new Date(),
+  })
+  assertEquals(await ctx.orgRepo.isMember(user.id, org.id), true)
+
+  await ctx.svc.remove(user.id)
+
+  // A surviving membership would be inherited by any future row reusing the id.
+  assertEquals(await ctx.orgRepo.isMember(user.id, org.id), false)
 })

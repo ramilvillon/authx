@@ -5,6 +5,10 @@ import type {
   UpdateUserInput,
 } from './users.schema.ts'
 import type { RefreshTokenRepository } from '../auth/token.repository.ts'
+import type { AuthCodeRepository } from '../auth/authcode.repository.ts'
+import type { SocialAccountRepository } from '../auth/social.repository.ts'
+import type { OrgRepository } from '../orgs/orgs.repository.ts'
+import type { VerificationTokenRepository } from '../verification/verification.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { AppError } from '../../lib/errors.ts'
@@ -19,8 +23,20 @@ export function createUserService(deps: {
   repo: UserRepository
   tokenRepo: RefreshTokenRepository
   sessionRepo: SessionRepository
+  authCodeRepo: AuthCodeRepository
+  verificationRepo: VerificationTokenRepository
+  socialRepo: SocialAccountRepository
+  orgRepo: OrgRepository
 }) {
-  const { repo, tokenRepo, sessionRepo } = deps
+  const {
+    repo,
+    tokenRepo,
+    sessionRepo,
+    authCodeRepo,
+    verificationRepo,
+    socialRepo,
+    orgRepo,
+  } = deps
   return {
     async register(input: RegisterInput): Promise<PublicUser> {
       if (await repo.findByEmail(input.email)) {
@@ -107,6 +123,20 @@ export function createUserService(deps: {
       return toPublic(u)
     },
     async remove(id: string): Promise<void> {
+      // The schema has no foreign keys, so nothing cleans these up for us --
+      // which is why F13 had to make orphaned rows inert rather than absent.
+      // Satellites first, then the user row: if a purge fails the account still
+      // exists and a retry finishes the job, where the other order would leave
+      // orphans behind with no way to find them again.
+      await Promise.all([
+        tokenRepo.deleteAllForUser(id),
+        sessionRepo.deleteAllForUser(id),
+        authCodeRepo.deleteAllForUser(id),
+        verificationRepo.deleteAllForUser(id),
+        socialRepo.deleteAllForUser(id),
+        repo.removeAllRoles(id),
+        orgRepo.removeAllMemberships(id),
+      ])
       if (!(await repo.delete(id))) throw AppError.of('user_not_found')
     },
     async list(): Promise<PublicUser[]> {

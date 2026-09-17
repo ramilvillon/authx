@@ -22,5 +22,11 @@ export function createDrizzleSocialAccountRepository(
         createdAt: new Date(),
       })
     },
+    async deleteAllForUser(userId) {
+      const [res] = await db.delete(socialAccounts).where(
+        eq(socialAccounts.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
   }
 }

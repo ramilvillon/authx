@@ -68,13 +68,13 @@ export function createDrizzleUserRepository(db: Database): UserRepository {
       // re-verifying an already-verified row still reports 1.
       return (res as { affectedRows: number }).affectedRows === 1
     },
-    // ponytail: hard delete, and the schema has no foreign keys — this orphans
-    // rows in refresh_tokens, social_accounts, user_roles, memberships,
-    // sessions, authorization_codes and email_verification_tokens, forever.
-    // F13 compensates by making orphaned rows inert rather than absent. Agreed
-    // upgrade: soft delete (`deletedAt`, filtered here in the repository so
-    // findById/findByEmail are the single chokepoint) plus a purge job for the
-    // real erasure. Blocked on the same cascade/pruning work either way.
+    // Deletes only the users row. The seven satellite tables are purged by
+    // userService.remove, which is the only caller that knows about all of
+    // them; the schema has no foreign keys to do it for us.
+    // ponytail: still a hard delete. Agreed upgrade is a soft delete
+    // (`deletedAt`, filtered here in the repository so findById/findByEmail
+    // stay the single chokepoint) plus a purge job that runs this same cascade
+    // after the grace period.
     async delete(id) {
       const [res] = await db.delete(users).where(eq(users.id, id))
       return (res as { affectedRows: number }).affectedRows > 0
@@ -89,6 +89,12 @@ export function createDrizzleUserRepository(db: Database): UserRepository {
       if (!role) throw new Error(`role ${roleName} not seeded`)
       await db.insert(userRoles).values({ userId, roleId: role.id })
         .onDuplicateKeyUpdate({ set: { userId } })
+    },
+    async removeAllRoles(userId) {
+      const [res] = await db.delete(userRoles).where(
+        eq(userRoles.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
     },
   }
 }

@@ -1,9 +1,13 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { makeTestDeps, seedDefaultService } from '../helpers.ts'
 
-// Deleting a user removes only the users row: its refresh tokens, sessions and
-// social links survive. None of them may still authenticate or mint tokens.
-Deno.test('a deleted user cannot refresh, resume a session, or log in via Google', async () => {
+// userService.remove now purges these rows outright (see users-service.test.ts).
+// This is the F13 invariant underneath that, and it is deliberately tested a
+// different way: an orphan is created by deleting the users row DIRECTLY,
+// bypassing the cascade. Orphans can still arrive from a half-finished purge,
+// a manual DB delete, or rows predating the cascade — and none of them may
+// authenticate or mint tokens. Defence in depth, not a duplicate.
+Deno.test('an orphaned row cannot refresh, resume a session, or log in via Google', async () => {
   const ctx = makeTestDeps()
   const { authService, userService } = ctx.deps
   const user = await userService.register({
@@ -24,7 +28,8 @@ Deno.test('a deleted user cannot refresh, resume a session, or log in via Google
     providerAccountId: 'g1',
   })
 
-  await userService.remove(user.id)
+  // NOT userService.remove: that would purge the very rows under test.
+  await ctx.userRepo.delete(user.id)
 
   await assertRejects(
     () => authService.refreshGrant(pair.refresh_token),

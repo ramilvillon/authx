@@ -34,5 +34,11 @@ export function createDrizzleVerificationTokenRepository(
         ))
       return (res as { affectedRows: number }).affectedRows === 1
     },
+    async deleteAllForUser(userId) {
+      const [res] = await db.delete(emailVerificationTokens).where(
+        eq(emailVerificationTokens.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
   }
 }

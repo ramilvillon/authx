@@ -30,5 +30,11 @@ export function createDrizzleSessionRepository(
         eq(sessions.userId, userId),
       )
     },
+    async deleteAllForUser(userId) {
+      const [res] = await db.delete(sessions).where(
+        eq(sessions.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
   }
 }

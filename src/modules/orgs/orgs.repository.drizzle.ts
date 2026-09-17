@@ -66,6 +66,12 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
         and(eq(memberships.userId, userId), eq(memberships.orgId, orgId)),
       )
     },
+    async removeAllMemberships(userId) {
+      const [res] = await db.delete(memberships).where(
+        eq(memberships.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
     async isMember(userId, orgId) {
       const row = await db.query.memberships.findFirst({
         where: and(

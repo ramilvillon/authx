@@ -22,6 +22,9 @@ export type AuthCodeRepository = {
   // Atomically marks consumed only if not already consumed; false = already
   // consumed (replay / lost race).
   consume(id: string): Promise<boolean>
+  // No foreign keys in the schema: a deleted user's rows survive unless
+  // something removes them. Returns the number of rows removed.
+  deleteAllForUser(userId: string): Promise<number>
 }
 
 // In-memory test double. Mirror behavior in authcode.repository.drizzle.ts.
@@ -43,6 +46,16 @@ export function createInMemoryAuthCodeRepository(): AuthCodeRepository {
       if (!c || c.consumedAt) return Promise.resolve(false)
       byId.set(id, { ...c, consumedAt: new Date() })
       return Promise.resolve(true)
+    },
+    deleteAllForUser(userId) {
+      let n = 0
+      for (const [k, v] of byId) {
+        if (v.userId === userId) {
+          byId.delete(k)
+          n++
+        }
+      }
+      return Promise.resolve(n)
     },
   }
 }
