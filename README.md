@@ -41,7 +41,9 @@ dependency-free so the `hc` RPC client keeps full type inference.
 ## Prerequisites
 
 - [asdf](https://asdf-vm.com/) (pins Deno, Node, gitleaks via `.tool-versions`)
-- Docker (for MySQL)
+- A Docker engine for MySQL and Mailpit: Docker Desktop, or
+  [Colima](https://github.com/abiosoft/colima) (`colima start` before any `make`
+  target that touches containers)
 
 ```bash
 asdf install          # installs deno, nodejs, gitleaks at pinned versions
@@ -51,16 +53,29 @@ npm install           # installs husky and activates the pre-commit hook
 ## Setup
 
 ```bash
-cp .env.example .env
-deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
-docker compose up -d mysql      # start MySQL
-docker compose up -d mailpit    # optional: local mail catcher, inbox at :8025
-deno task db:migrate            # apply Drizzle migrations
-deno task db:generate <name>    # generate a migration, e.g. db:generate users_deleted_at
-deno task db:seed               # seed the platform tenant + bootstrap admin
-deno task db:prune              # delete expired rows + erase deleted accounts (run on a schedule)
-deno task dev                   # start the API with --watch
+make bootstrap   # .env with a fresh JWT keypair, MySQL + Mailpit, migrations, seed
+make dev         # start the API with --watch
 ```
+
+Set `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` in `.env` and re-run
+`make seed` to get a platform admin. `make` alone lists every target:
+
+| Target                                 | What it does                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `make setup`                           | create `.env` from `.env.example` + JWT keypair (skips if present)     |
+| `make up` / `stop` / `status` / `logs` | start (and wait for healthy) / stop, keeping data / list / follow logs |
+| `make down`                            | remove containers **and the database volume**                          |
+| `make migrate` / `seed`                | apply migrations / seed the platform tenant + bootstrap admin          |
+| `make db-reset`                        | wipe the database and rebuild it from migrations + seed                |
+| `make studio` / `db-shell`             | browse the DB in Drizzle Studio / open a mysql shell                   |
+| `make test` / `check`                  | unit + integration tests / fmt, lint, typecheck                        |
+
+Don't build `.env` with `cp .env.example .env && deno task keys:gen >> .env`:
+`--env-file` keeps the first value of a duplicated key, so the template's empty
+`JWT_PRIVATE_KEY=` wins and the keys load empty. `make setup` strips those lines
+first.
+
+Mail is delivered to Mailpit by default; read it at http://localhost:8025.
 
 The server listens on `PORT` (default `3000`). Smoke test:
 
@@ -147,9 +162,10 @@ are rejected.
 | `GET`    | `/openapi`                          | —                                  | OpenAPI 3 spec (JSON)                                                                                                                        |
 | `GET`    | `/docs`                             | —                                  | Scalar API reference UI                                                                                                                      |
 
-`POST /oauth/token` accepts an optional `audience` (a service's `audience`
-string); the returned access token then carries exactly the permissions that
-user has in that service. Omit it for the default audience.
+`POST /oauth/token` requires an `audience` (a service's `audience` string) on
+the password and client_credentials grants; the returned access token carries
+exactly the permissions that user has in that service. A request without it is
+rejected with 400.
 
 Permission keys are defined per service, so the `users:*` permissions above
 count only on a token minted for the reserved `platform` audience — the same key
@@ -189,7 +205,7 @@ Example password-grant flow:
 # obtain a token pair
 curl -X POST localhost:3000/oauth/token \
   -H 'content-type: application/json' \
-  -d '{"grant_type":"password","username":"a@b.com","password":"pw123456"}'
+  -d '{"grant_type":"password","username":"a@b.com","password":"pw123456","audience":"platform"}'
 
 # call a protected route
 curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
@@ -244,12 +260,12 @@ is surfaced in both the id_token and the UserInfo response.
 
 ### Email verification
 
-Registration triggers a verification email. The default `EmailSender` only
-records that a mail was sent — the link embeds a live verification token and is
-never logged unless you set `EMAIL_LOG_LINKS=true` in your `.env` for local
-development. Implement `EmailSender` in `src/lib/email.ts` for real SMTP/webhook
-delivery. Clicking the link sets `email_verified: true`, which is surfaced in
-the OIDC id_token and UserInfo endpoint. The resend endpoint
+Registration triggers a verification email. With `SMTP_HOST` set it is sent over
+SMTP (locally, to Mailpit); with it empty the log sender only records that a
+mail was sent — the link embeds a live verification token and is never logged
+unless you set `EMAIL_LOG_LINKS=true` in your `.env` for local development.
+Clicking the link sets `email_verified: true`, which is surfaced in the OIDC
+id_token and UserInfo endpoint. The resend endpoint
 (`POST /verify-email/resend`) is anti-enumeration — it always returns 204
 regardless of whether the address exists or is already verified. Changing a
 user's email resets `email_verified` to false. Verification is non-blocking: it
@@ -328,5 +344,6 @@ unset (so they're ignored unless you run `deno task test:e2e`, which loads
 deno task db:generate   # generate a migration from schema changes
 deno task db:migrate    # apply migrations
 deno task db:seed       # seed the platform tenant + bootstrap admin
+deno task db:prune      # delete expired rows + erase deleted accounts (run on a schedule)
 deno task keys:gen      # print a fresh RS256 keypair as JWT_PRIVATE_KEY/JWT_PUBLIC_KEY env lines
 ```
