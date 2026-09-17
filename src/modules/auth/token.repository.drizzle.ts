@@ -44,5 +44,11 @@ export function createDrizzleRefreshTokenRepository(
         eq(refreshTokens.userId, userId),
       )
     },
+    async deleteAllForUser(userId) {
+      const [res] = await db.delete(refreshTokens).where(
+        eq(refreshTokens.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
   }
 }

@@ -23,6 +23,9 @@ export type RefreshTokenRepository = {
   rotate(oldId: string, next: NewRefreshToken): Promise<boolean>
   revoke(id: string): Promise<void>
   revokeAllForUser(userId: string): Promise<void>
+  // No foreign keys in the schema: a deleted user's rows survive unless
+  // something removes them. Returns the number of rows removed.
+  deleteAllForUser(userId: string): Promise<number>
 }
 
 // In-memory test double for RefreshTokenRepository: lets the unit/integration
@@ -58,6 +61,16 @@ export function createInMemoryRefreshTokenRepository(): RefreshTokenRepository {
         if (t.userId === userId) byId.set(id, { ...t, revokedAt: new Date() })
       }
       return Promise.resolve()
+    },
+    deleteAllForUser(userId) {
+      let n = 0
+      for (const [k, v] of byId) {
+        if (v.userId === userId) {
+          byId.delete(k)
+          n++
+        }
+      }
+      return Promise.resolve(n)
     },
   }
 }

@@ -36,6 +36,9 @@ export type OrgRepository = {
   listServicesByOrg(orgId: string): Promise<AppServiceRecord[]>
   addMember(m: MembershipRecord): Promise<void>
   removeMember(userId: string, orgId: string): Promise<void>
+  // memberships has no foreign key to users, so a deleted account's org
+  // memberships survive and would be inherited by a row reusing the id.
+  removeAllMemberships(userId: string): Promise<number>
   isMember(userId: string, orgId: string): Promise<boolean>
 }
 
@@ -89,6 +92,16 @@ export function createInMemoryOrgRepository(): OrgRepository {
     removeMember(userId, orgId) {
       members.delete(`${userId}:${orgId}`)
       return Promise.resolve()
+    },
+    removeAllMemberships(userId) {
+      let n = 0
+      for (const key of [...members.keys()]) {
+        if (key.startsWith(`${userId}:`)) {
+          members.delete(key)
+          n++
+        }
+      }
+      return Promise.resolve(n)
     },
     isMember(userId, orgId) {
       return Promise.resolve(members.has(`${userId}:${orgId}`))

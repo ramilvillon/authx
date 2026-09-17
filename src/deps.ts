@@ -66,7 +66,15 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
     config,
     keySet,
     rateStore: createMemoryRateLimitStore(),
-    userService: createUserService({ repo: userRepo, tokenRepo, sessionRepo }),
+    userService: createUserService({
+      repo: userRepo,
+      tokenRepo,
+      sessionRepo,
+      authCodeRepo,
+      verificationRepo,
+      socialRepo,
+      orgRepo,
+    }),
     authService: createAuthService({
       userRepo,
       tokenRepo,

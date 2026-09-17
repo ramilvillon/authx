@@ -29,5 +29,11 @@ export function createDrizzleAuthCodeRepository(
         ))
       return (res as { affectedRows: number }).affectedRows === 1
     },
+    async deleteAllForUser(userId) {
+      const [res] = await db.delete(authorizationCodes).where(
+        eq(authorizationCodes.userId, userId),
+      )
+      return (res as { affectedRows: number }).affectedRows
+    },
   }
 }

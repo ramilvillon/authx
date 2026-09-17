@@ -1,3 +1,4 @@
+import { createInMemoryVerificationTokenRepository } from '../../src/modules/verification/verification.repository.ts'
 import { assert, assertEquals, assertRejects } from '@std/assert'
 import { decode } from 'hono/jwt'
 import { createInMemoryUserRepository } from '../../src/modules/users/users.repository.ts'
@@ -8,7 +9,7 @@ import { createInMemorySessionRepository } from '../../src/modules/auth/session.
 import { createInMemoryAuthCodeRepository } from '../../src/modules/auth/authcode.repository.ts'
 import { createUserService } from '../../src/modules/users/users.service.ts'
 import { createAuthService } from '../../src/modules/auth/auth.service.ts'
-import type { SocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
+import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
 import { loadConfig } from '../../src/config.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 
@@ -27,15 +28,16 @@ function setup() {
   const tokenRepo = createInMemoryRefreshTokenRepository()
   const orgRepo = createInMemoryOrgRepository()
   const rbacRepo = createInMemoryRbacRepository()
-  const socialRepo: SocialAccountRepository = {
-    findByProviderAccount: () => Promise.resolve(null),
-    link: () => Promise.resolve(),
-  }
+  const socialRepo = createInMemorySocialAccountRepository()
   const sessionRepo = createInMemorySessionRepository()
   const userService = createUserService({
     repo: userRepo,
     tokenRepo,
     sessionRepo,
+    authCodeRepo: createInMemoryAuthCodeRepository(),
+    verificationRepo: createInMemoryVerificationTokenRepository(),
+    socialRepo: createInMemorySocialAccountRepository(),
+    orgRepo,
   })
   const authService = createAuthService({
     userRepo,
