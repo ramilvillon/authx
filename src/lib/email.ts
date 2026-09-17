@@ -1,7 +1,10 @@
 import type { Logger } from './logger.ts'
+import type { TokenPurpose } from '../modules/verification/verification.repository.ts'
 
 export type EmailSender = {
-  sendVerificationEmail(to: string, link: string): Promise<void>
+  // `purpose` lets a real implementation pick a template: "confirm your
+  // address" and "confirm you want this account deleted" must not read alike.
+  sendLink(to: string, purpose: TokenPurpose, link: string): Promise<void>
 }
 
 // Default dev sender. Zero deps/config. Swap for a real SMTP/webhook
@@ -14,11 +17,14 @@ export function createLogEmailSender(
   logLinks = false,
 ): EmailSender {
   return {
-    sendVerificationEmail(to, link) {
+    sendLink(to, purpose, link) {
       if (logLinks) {
-        logger.info({ to, link }, 'verification email (log sender)')
+        logger.info({ to, purpose, link }, 'outbound link email (log sender)')
       } else {
-        logger.info('verification email (log sender; EMAIL_LOG_LINKS=false)')
+        logger.info(
+          { purpose },
+          'outbound link email (log sender; EMAIL_LOG_LINKS=false)',
+        )
       }
       return Promise.resolve()
     },

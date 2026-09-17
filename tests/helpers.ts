@@ -14,6 +14,7 @@ import { createAuthService } from '../src/modules/auth/auth.service.ts'
 import { createAdminService } from '../src/modules/admin/admin.service.ts'
 import { createMemoryRateLimitStore } from '../src/lib/rate-limit-store.ts'
 import type { SocialAccountRepository } from '../src/modules/auth/social.repository.ts'
+import type { TokenPurpose } from '../src/modules/verification/verification.repository.ts'
 import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../src/lib/keys.ts'
@@ -38,7 +39,7 @@ export type TestContext = {
   socialRepo: SocialAccountRepository
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
-  sentEmails: { to: string; link: string }[]
+  sentEmails: { to: string; purpose: TokenPurpose; link: string }[]
 }
 
 export function makeTestDeps(
@@ -52,10 +53,10 @@ export function makeTestDeps(
   const sessionRepo = createInMemorySessionRepository()
   const authCodeRepo = createInMemoryAuthCodeRepository()
   const verificationRepo = createInMemoryVerificationTokenRepository()
-  const sentEmails: { to: string; link: string }[] = []
+  const sentEmails: { to: string; purpose: TokenPurpose; link: string }[] = []
   const emailSender = {
-    sendVerificationEmail(to: string, link: string) {
-      sentEmails.push({ to, link })
+    sendLink(to: string, purpose: TokenPurpose, link: string) {
+      sentEmails.push({ to, purpose, link })
       return Promise.resolve()
     },
   }

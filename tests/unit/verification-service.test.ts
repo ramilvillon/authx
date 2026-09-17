@@ -1,3 +1,4 @@
+import type { TokenPurpose } from '../../src/modules/verification/verification.repository.ts'
 import { assert, assertEquals, assertRejects } from '@std/assert'
 import { makeTestDeps } from '../helpers.ts'
 import { createVerificationService } from '../../src/modules/verification/verification.service.ts'
@@ -78,7 +79,7 @@ Deno.test('verifyEmail does not verify an address swapped in after the binding c
     verificationRepo: createInMemoryVerificationTokenRepository(),
     userRepo: racingUserRepo,
     emailSender: {
-      sendVerificationEmail: (_to: string, link: string) => {
+      sendLink: (_to: string, _purpose: TokenPurpose, link: string) => {
         links.push(link)
         return Promise.resolve()
       },

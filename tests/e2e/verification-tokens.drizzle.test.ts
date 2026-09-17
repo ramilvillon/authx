@@ -17,6 +17,7 @@ Deno.test({
       id,
       userId: crypto.randomUUID(),
       email: 'a@b.com',
+      purpose: 'verify_email',
       tokenHash,
       expiresAt: new Date(Date.now() + 60_000),
     })

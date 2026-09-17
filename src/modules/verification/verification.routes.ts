@@ -8,6 +8,17 @@ import {
 } from './verification-page.ts'
 
 const verification = new Hono<AppEnv>()
+  // One redemption endpoint for every out-of-band confirmation; the token's
+  // purpose decides what happens, so a link can only ever do the one thing it
+  // was minted for.
+  .get('/confirm', validator('query', verifyQuerySchema), async (c) => {
+    try {
+      await c.var.verificationService.confirm(c.req.valid('query').token)
+    } catch {
+      return c.html(verificationErrorPage(), 400)
+    }
+    return c.html(verificationSuccessPage())
+  })
   .get('/verify-email', validator('query', verifyQuerySchema), async (c) => {
     try {
       await c.var.verificationService.verifyEmail(c.req.valid('query').token)

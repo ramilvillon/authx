@@ -127,7 +127,13 @@ export const authorizationCodes = mysqlTable('authorization_codes', {
 export const emailVerificationTokens = mysqlTable('email_verification_tokens', {
   id: varchar('id', { length: 36 }).primaryKey(),
   userId: varchar('user_id', { length: 36 }).notNull(),
+  // For 'verify_email' this is the address being verified; for 'email_change'
+  // it is the address being moved TO. The confirmation mail itself always goes
+  // to the account's CURRENT address -- see verification.service.ts.
   email: varchar('email', { length: 255 }).notNull(),
+  // Without this, a token minted to verify an address would also redeem at the
+  // account-deletion path. Every redemption path asserts its own purpose.
+  purpose: varchar('purpose', { length: 32 }).notNull().default('verify_email'),
   tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
   expiresAt: datetime('expires_at').notNull(),
   consumedAt: datetime('consumed_at'),
