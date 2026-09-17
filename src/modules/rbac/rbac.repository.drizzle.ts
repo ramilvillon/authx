@@ -27,6 +27,21 @@ export function createDrizzleRbacRepository(db: Database): RbacRepository {
       await db.insert(userRoles).values({ userId, roleId })
         .onDuplicateKeyUpdate({ set: { userId } })
     },
+    async findRoleByName(appServiceId, name) {
+      const row = await db.query.roles.findFirst({
+        where: and(eq(roles.appServiceId, appServiceId), eq(roles.name, name)),
+      })
+      return row ?? null
+    },
+    async findPermissionByKey(appServiceId, key) {
+      const row = await db.query.permissions.findFirst({
+        where: and(
+          eq(permissions.appServiceId, appServiceId),
+          eq(permissions.key, key),
+        ),
+      })
+      return row ?? null
+    },
     async findRoleById(id) {
       const row = await db.query.roles.findFirst({ where: eq(roles.id, id) })
       return row ?? null

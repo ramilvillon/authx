@@ -28,6 +28,9 @@ export type MembershipRecord = {
 export type OrgRepository = {
   createOrg(o: OrgRecord): Promise<OrgRecord>
   findOrgById(id: string): Promise<OrgRecord | null>
+  // organizations.slug is UNIQUE; callers check before inserting so a duplicate
+  // is reported as a conflict rather than a driver error.
+  findOrgBySlug(slug: string): Promise<OrgRecord | null>
   listOrgs(): Promise<OrgRecord[]>
   createService(s: AppServiceRecord): Promise<AppServiceRecord>
   findServiceById(id: string): Promise<AppServiceRecord | null>
@@ -55,6 +58,12 @@ export function createInMemoryOrgRepository(): OrgRepository {
     },
     findOrgById(id) {
       return Promise.resolve(orgs.has(id) ? { ...orgs.get(id)! } : null)
+    },
+    findOrgBySlug(slug) {
+      for (const o of orgs.values()) {
+        if (o.slug === slug) return Promise.resolve({ ...o })
+      }
+      return Promise.resolve(null)
     },
     listOrgs() {
       return Promise.resolve([...orgs.values()].map((o) => ({ ...o })))

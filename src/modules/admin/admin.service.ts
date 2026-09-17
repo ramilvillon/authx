@@ -19,6 +19,9 @@ export function createAdminService(deps: {
 
   return {
     async createOrg(input: { slug: string; name: string }) {
+      if (await orgRepo.findOrgBySlug(input.slug)) {
+        throw AppError.of('org_slug_taken')
+      }
       return await orgRepo.createOrg({
         id: crypto.randomUUID(),
         slug: input.slug,
@@ -41,6 +44,12 @@ export function createAdminService(deps: {
     }) {
       if (!(await orgRepo.findOrgById(orgId))) {
         throw AppError.of('org_not_found')
+      }
+      // The audience is what an access token's `aud` claim carries, so two
+      // services sharing one would be indistinguishable to requireAuth. The
+      // client id is generated here rather than supplied, so it needs no check.
+      if (await orgRepo.findServiceByAudience(input.audience)) {
+        throw AppError.of('service_audience_taken')
       }
       const clientId = `cid_${generateRefreshToken().slice(0, 24)}`
       // Confidential clients get a secret; returned once, stored hashed.
@@ -77,6 +86,9 @@ export function createAdminService(deps: {
       orgRepo.removeMember(userId, orgId),
     async createRole(serviceId: string, name: string) {
       await requireService(serviceId)
+      if (await rbacRepo.findRoleByName(serviceId, name)) {
+        throw AppError.of('role_name_taken')
+      }
       return await rbacRepo.createRole({
         id: crypto.randomUUID(),
         appServiceId: serviceId,
@@ -85,6 +97,9 @@ export function createAdminService(deps: {
     },
     async createPermission(serviceId: string, key: string) {
       await requireService(serviceId)
+      if (await rbacRepo.findPermissionByKey(serviceId, key)) {
+        throw AppError.of('permission_key_taken')
+      }
       return await rbacRepo.createPermission({
         id: crypto.randomUUID(),
         appServiceId: serviceId,
