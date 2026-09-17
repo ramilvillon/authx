@@ -20,9 +20,11 @@ Deno.test({
       createdAt: now,
       updatedAt: now,
     })
-    await repo.assignRole(id, 'user')
+    // 'admin' is what db:seed actually creates; there has never been a 'user'
+    // role, which is the bug this test used to assert into existence.
+    await repo.assignRole(id, 'admin')
     const access = await repo.findWithAccessById(id)
-    assertEquals(access?.roles, ['user'])
+    assertEquals(access?.roles, ['admin'])
     await repo.delete(id)
     await pool.end()
   },

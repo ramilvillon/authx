@@ -119,3 +119,33 @@ Deno.test('purging after the grace period hard-deletes and cascades', async () =
     'the purge must run the same cascade a hard delete did',
   )
 })
+
+Deno.test('Google login does not create a second row for a soft-deleted address', async () => {
+  const ctx = makeTestDeps()
+  const user = await ctx.deps.userService.register({
+    email: 'returning@b.com',
+    password: 'pw123456',
+  })
+  await seedDefaultService(ctx.orgRepo, user.id)
+  await ctx.deps.userService.remove(user.id)
+
+  // findByEmail is filtered, so the deleted row is invisible -- but
+  // users.email is UNIQUE, so creating a second row with the same address is a
+  // duplicate-key error at the database. The in-memory double cannot reproduce
+  // that, so assert the behaviour: refuse, do not create.
+  await assertRejects(
+    () =>
+      ctx.deps.authService.loginWithGoogle({
+        providerAccountId: 'g-returning',
+        email: 'returning@b.com',
+        emailVerified: true,
+      }, 'test-service'),
+    Error,
+  )
+  assertEquals(
+    (await ctx.userRepo.findDeletedBefore(new Date(Date.now() + 1000))).length,
+    1,
+    'still exactly one row for this address',
+  )
+  assertEquals(await ctx.userRepo.findByEmail('returning@b.com'), null)
+})

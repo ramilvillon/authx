@@ -213,6 +213,14 @@ export function createAuthService(deps: {
 
       const user = await userRepo.findByEmail(profile.email)
       if (!user) {
+        // findByEmail hides soft-deleted rows, but users.email is UNIQUE, so
+        // one of them still occupies the address and creating here would be a
+        // duplicate-key error at the database. Same reason register() checks
+        // findAnyByEmail. The address stays reserved until the grace period
+        // ends and db:prune erases the account.
+        if (await userRepo.findAnyByEmail(profile.email)) {
+          throw AppError.of('email_taken')
+        }
         const now = new Date()
         const created = await userRepo.create({
           id: crypto.randomUUID(),

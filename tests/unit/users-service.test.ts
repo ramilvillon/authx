@@ -59,14 +59,17 @@ function service(repo = createInMemoryUserRepository({ user: [] })) {
   }
 }
 
-Deno.test('register creates user with default role and hashed password', async () => {
+Deno.test('register hashes the password and grants no roles', async () => {
   const { repo, svc } = service()
   const user = await svc.register({ email: 'a@b.com', password: 'pw123456' })
   assertEquals(user.email, 'a@b.com')
   const stored = await repo.findById(user.id)
   assertEquals(await verifyPassword('pw123456', stored!.passwordHash!), true)
+  // Roles are per-service and granted through the management API. The old
+  // global 'user' role granted nothing and was never seeded, so the drizzle
+  // repository threw on it -- see registration.drizzle.test.ts.
   const access = await repo.findWithAccessById(user.id)
-  assertEquals(access?.roles, ['user'])
+  assertEquals(access?.roles, [])
 })
 
 Deno.test('register rejects duplicate email', async () => {

@@ -49,8 +49,17 @@ jobs:
 
       # The db/test tasks read --env-file=.env; .env.example already sets
       # DB_HOST/DB_PORT to localhost:3306, matching the service container above.
+      #
+      # The JWT keys cannot simply be copied: .env.example ships them EMPTY and
+      # config.ts requires min(1), so `cp .env.example .env` produces a file
+      # that fails validation the moment anything calls loadConfig. Nor can the
+      # generated keys just be appended -- Deno's --env-file is FIRST-wins, so
+      # the empty placeholder would beat them. Strip the placeholders, then
+      # generate a throwaway pair for this run.
       - name: Configure environment
-        run: cp .env.example .env
+        run: |
+          grep -v '^JWT_PRIVATE_KEY=\|^JWT_PUBLIC_KEY=' .env.example > .env
+          deno task keys:gen >> .env
 
       - name: Apply migrations
         run: deno task db:migrate

@@ -53,7 +53,11 @@ export function createUserService(deps: {
         createdAt: now,
         updatedAt: now,
       })
-      await repo.assignRole(user.id, 'user')
+      // No role on registration. Roles are per-service and granted through the
+      // management API -- the same reason loginWithGoogle assigns none. The old
+      // global 'user' role granted nothing, was never seeded, and made the
+      // drizzle assignRole throw 'role user not seeded' on every registration
+      // against a real database.
       return toPublic(user)
     },
     async getById(id: string): Promise<PublicUser> {
