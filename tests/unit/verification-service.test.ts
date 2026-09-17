@@ -1,3 +1,5 @@
+import { createInMemoryRefreshTokenRepository } from '../../src/modules/auth/token.repository.ts'
+import { createInMemorySessionRepository } from '../../src/modules/auth/session.repository.ts'
 import type { TokenPurpose } from '../../src/modules/verification/verification.repository.ts'
 import { assert, assertEquals, assertRejects } from '@std/assert'
 import { makeTestDeps } from '../helpers.ts'
@@ -78,6 +80,8 @@ Deno.test('verifyEmail does not verify an address swapped in after the binding c
   const service = createVerificationService({
     verificationRepo: createInMemoryVerificationTokenRepository(),
     userRepo: racingUserRepo,
+    tokenRepo: createInMemoryRefreshTokenRepository(),
+    sessionRepo: createInMemorySessionRepository(),
     emailSender: {
       sendLink: (_to: string, _purpose: TokenPurpose, link: string) => {
         links.push(link)

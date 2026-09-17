@@ -1,7 +1,12 @@
 import { Hono } from 'hono'
 import { validator } from 'hono-openapi/zod'
 import type { AppEnv } from '../../deps.ts'
-import { resendSchema, verifyQuerySchema } from './verification.schema.ts'
+import {
+  passwordResetRequestSchema,
+  passwordResetSchema,
+  resendSchema,
+  verifyQuerySchema,
+} from './verification.schema.ts'
 import {
   verificationErrorPage,
   verificationSuccessPage,
@@ -27,6 +32,28 @@ const verification = new Hono<AppEnv>()
     }
     return c.html(verificationSuccessPage())
   })
+  // Separate from /confirm on purpose: a reset cannot act on a GET, because the
+  // user still has to choose a new password. /confirm refuses these tokens.
+  .post(
+    '/password-reset/request',
+    validator('json', passwordResetRequestSchema),
+    async (c) => {
+      // Best-effort + always 204: never reveal whether the address exists.
+      await c.var.verificationService.startPasswordReset(
+        c.req.valid('json').email,
+      ).catch(() => {})
+      return c.body(null, 204)
+    },
+  )
+  .post(
+    '/password-reset',
+    validator('json', passwordResetSchema),
+    async (c) => {
+      const { token, password } = c.req.valid('json')
+      await c.var.verificationService.resetPassword(token, password)
+      return c.body(null, 204)
+    },
+  )
   .post('/verify-email/resend', validator('json', resendSchema), async (c) => {
     // Best-effort + always 204: never reveal whether the email exists/is verified.
     await c.var.verificationService.resend(c.req.valid('json').email).catch(

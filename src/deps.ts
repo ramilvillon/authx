@@ -54,6 +54,8 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const verificationService = createVerificationService({
     verificationRepo,
     userRepo,
+    tokenRepo,
+    sessionRepo,
     emailSender,
     config,
   })
