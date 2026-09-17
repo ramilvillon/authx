@@ -17,6 +17,12 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
       await db.insert(organizations).values(o)
       return o
     },
+    async findOrgBySlug(slug) {
+      const row = await db.query.organizations.findFirst({
+        where: eq(organizations.slug, slug),
+      })
+      return row ?? null
+    },
     async findOrgById(id) {
       const row = await db.query.organizations.findFirst({
         where: eq(organizations.id, id),

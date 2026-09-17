@@ -40,6 +40,22 @@ export const ERRORS = {
   org_not_found: { status: 404, message: 'organization not found' },
   service_not_found: { status: 404, message: 'service not found' },
   email_taken: { status: 409, message: 'email already registered' },
+  org_slug_taken: {
+    status: 409,
+    message: 'an org with this slug already exists',
+  },
+  service_audience_taken: {
+    status: 409,
+    message: 'a service with this audience already exists',
+  },
+  role_name_taken: {
+    status: 409,
+    message: 'a role with this name already exists in this service',
+  },
+  permission_key_taken: {
+    status: 409,
+    message: 'a permission with this key already exists in this service',
+  },
   not_org_member: { status: 403, message: 'not a member of this organization' },
   platform_required: { status: 403, message: 'platform token required' },
   google_email_unverified: {

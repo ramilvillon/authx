@@ -8,6 +8,13 @@ export type RbacRepository = {
   assignRoleToUser(userId: string, roleId: string): Promise<void>
   assignRoleToClient(clientAppServiceId: string, roleId: string): Promise<void>
   findRoleById(id: string): Promise<RoleRecord | null>
+  // Both constraints are (app_service_id, name/key), not the name alone --
+  // per-service RBAC depends on two services being able to use the same name.
+  findRoleByName(appServiceId: string, name: string): Promise<RoleRecord | null>
+  findPermissionByKey(
+    appServiceId: string,
+    key: string,
+  ): Promise<PermissionRecord | null>
   permissionsForUserInService(
     userId: string,
     appServiceId: string,
@@ -47,6 +54,22 @@ export function createInMemoryRbacRepository(): RbacRepository {
     },
     findRoleById(id) {
       return Promise.resolve(roles.has(id) ? { ...roles.get(id)! } : null)
+    },
+    findRoleByName(appServiceId, name) {
+      for (const r of roles.values()) {
+        if (r.appServiceId === appServiceId && r.name === name) {
+          return Promise.resolve({ ...r })
+        }
+      }
+      return Promise.resolve(null)
+    },
+    findPermissionByKey(appServiceId, key) {
+      for (const p of perms.values()) {
+        if (p.appServiceId === appServiceId && p.key === key) {
+          return Promise.resolve({ ...p })
+        }
+      }
+      return Promise.resolve(null)
     },
     permissionsForUserInService(userId, appServiceId) {
       const out = new Set<string>()
