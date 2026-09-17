@@ -55,6 +55,7 @@ cp .env.example .env
 deno task keys:gen >> .env       # generate the RS256 keypair, append to .env
 docker compose up -d mysql      # start MySQL
 deno task db:migrate            # apply Drizzle migrations
+deno task db:generate <name>    # generate a migration, e.g. db:generate users_deleted_at
 deno task db:seed               # seed the platform tenant + bootstrap admin
 deno task db:prune              # delete expired rows + erase deleted accounts (run on a schedule)
 deno task dev                   # start the API with --watch
