@@ -79,9 +79,10 @@ export function createApp(deps: Deps) {
     openAPISpecs(app, {
       documentation: {
         info: {
-          title: 'API Boilerplate',
+          title: 'authx',
           version: '1.0.0',
-          description: 'Hono + Deno REST API boilerplate',
+          description:
+            'Auth server: users, organizations, per-service RBAC, audience-scoped JWTs',
         },
         tags: [
           { name: 'Users', description: 'Registration and user management' },

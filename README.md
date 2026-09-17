@@ -1,9 +1,10 @@
-# deno-hono-api-starter
+# authx
 
-A production-shaped REST API starter built with Deno, Hono, and TypeScript.
-Factory-function composition (no inheritance), dependencies flow inward
-(`config → db → repositories → services → deps`), and route modules stay
-dependency-free so the `hc` RPC client keeps full type inference.
+A self-hosted auth server for TypeScript service backends: users, organizations,
+and per-service RBAC, issuing RS256 access tokens scoped to one service's
+audience. Services verify tokens locally against the published JWKS, with no
+call back to authx; machine-to-machine callers get the same tokens through
+`client_credentials`. Built with Deno, Hono, Drizzle, and MySQL.
 
 ## Features
 
@@ -21,9 +22,10 @@ dependency-free so the `hc` RPC client keeps full type inference.
 - **SSO (Authorization Code + PKCE)** — `GET/POST /oauth/authorize` with a
   server-side session; `grant_type=authorization_code` on `/oauth/token`
   exchanges a one-time PKCE-protected code for audience-scoped tokens
-- **Email verification** — registration sends a single-use verification link via
-  a pluggable EmailSender (log default); GET /verify-email flips email_verified
-  true
+- **Email flows over SMTP** — verification on registration, password reset, and
+  confirmed email change and account deletion, all by single-use emailed links
+- **Soft-deleted accounts** — a deleted account is kept for
+  `ACCOUNT_PURGE_GRACE`, then erased by `db:prune`
 - **Google social login** — verified-email requirement (`/oauth/google`)
 - **M2M (client_credentials)** — a confidential service exchanges client_id +
   client_secret for a short-lived audience-scoped token whose scope is its RBAC

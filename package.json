@@ -1,5 +1,5 @@
 {
-  "name": "deno-hono-api-starter",
+  "name": "authx",
   "private": true,
   "scripts": {
     "prepare": "husky"
