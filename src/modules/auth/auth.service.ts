@@ -107,6 +107,21 @@ export function createAuthService(deps: {
     }
   }
 
+  // An SSO session for a user who has already proven who they are. Both login
+  // paths (password, Google) end here; the authorization code comes after.
+  async function createSession(
+    userId: string,
+  ): Promise<{ token: string; userId: string }> {
+    const token = generateRefreshToken()
+    await sessionRepo.create({
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash: await hashToken(token),
+      expiresAt: new Date(Date.now() + config.ssoSessionTtl * 1000),
+    })
+    return { token, userId }
+  }
+
   return {
     async passwordGrant(
       email: string,
@@ -191,19 +206,25 @@ export function createAuthService(deps: {
       const existing = await tokenRepo.findByHash(await hashToken(refreshToken))
       if (existing && !existing.revokedAt) await tokenRepo.revoke(existing.id)
     },
-    async loginWithGoogle(
-      profile: {
-        providerAccountId: string
-        email: string
-        emailVerified: boolean
-      },
-      audience: string,
-    ): Promise<TokenPair> {
+    // Google is a way to sign in to the authorize flow, not a token endpoint:
+    // the pending /oauth/authorize request already names the service, so the
+    // audience never has to survive the round trip through Google.
+    async loginWithGoogle(profile: {
+      providerAccountId: string
+      email: string
+      emailVerified: boolean
+    }): Promise<{ token: string; userId: string }> {
       const existing = await deps.socialRepo.findByProviderAccount(
         'google',
         profile.providerAccountId,
       )
-      if (existing) return issueTokensForService(existing.userId, audience)
+      if (existing) {
+        // A deleted account keeps its social link until it is purged.
+        if (!(await subjectExists(existing.userId))) {
+          throw AppError.of('invalid_grant')
+        }
+        return createSession(existing.userId)
+      }
 
       // Never create-or-link an account from an unverified provider email:
       // that would let an attacker take over an account by claiming its email.
@@ -236,7 +257,7 @@ export function createAuthService(deps: {
           provider: 'google',
           providerAccountId: profile.providerAccountId,
         })
-        return issueTokensForService(created.id, audience)
+        return createSession(created.id)
       }
 
       if (user.passwordHash !== null || !user.emailVerified) {
@@ -255,7 +276,7 @@ export function createAuthService(deps: {
         provider: 'google',
         providerAccountId: profile.providerAccountId,
       })
-      return issueTokensForService(user.id, audience)
+      return createSession(user.id)
     },
     async validateAuthorizeRequest(p: {
       clientId: string
@@ -327,14 +348,7 @@ export function createAuthService(deps: {
       if (!user || !user.passwordHash || !passwordOk) {
         throw AppError.of('invalid_credentials')
       }
-      const token = generateRefreshToken()
-      await sessionRepo.create({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        tokenHash: await hashToken(token),
-        expiresAt: new Date(Date.now() + config.ssoSessionTtl * 1000),
-      })
-      return { token, userId: user.id }
+      return createSession(user.id)
     },
     async exchangeAuthorizationCode(input: {
       code: string

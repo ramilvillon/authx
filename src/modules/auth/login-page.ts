@@ -11,11 +11,15 @@ export function loginPage(
     redirect_uri: string
     scope: string
     state?: string
+    nonce?: string
     code_challenge: string
     code_challenge_method: string
     csrf_token: string
   },
   error?: string,
+  // Present only when Google login is configured: the same authorize request,
+  // sent to /oauth/google instead of posted with a password.
+  googleHref?: string,
 ): string {
   const hidden = (name: string, value: string) =>
     `<input type="hidden" name="${esc(name)}" value="${esc(value)}">`
@@ -29,6 +33,7 @@ export function loginPage(
     ${hidden('redirect_uri', params.redirect_uri)}
     ${hidden('scope', params.scope)}
     ${hidden('state', params.state ?? '')}
+    ${params.nonce ? hidden('nonce', params.nonce) : ''}
     ${hidden('code_challenge', params.code_challenge)}
     ${hidden('code_challenge_method', params.code_challenge_method)}
     ${hidden('csrf_token', params.csrf_token)}
@@ -36,5 +41,10 @@ export function loginPage(
     <label>Password <input type="password" name="password" required></label>
     <button type="submit">Sign in</button>
   </form>
+  ${
+    googleHref
+      ? `<p><a href="${esc(googleHref)}">Sign in with Google</a></p>`
+      : ''
+  }
 </body></html>`
 }

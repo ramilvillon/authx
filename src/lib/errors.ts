@@ -67,6 +67,15 @@ export const ERRORS = {
     message:
       'an account with this email already exists; sign in with your password to link Google',
   },
+  google_login_disabled: {
+    status: 404,
+    message: 'google login is not configured',
+  },
+  authorize_request_expired: {
+    status: 400,
+    message:
+      'no sign-in in progress; start again from the application (GET /oauth/authorize)',
+  },
   csrf_token_invalid: {
     status: 403,
     message:

@@ -26,7 +26,8 @@ call back to authx; machine-to-machine callers get the same tokens through
   confirmed email change and account deletion, all by single-use emailed links
 - **Soft-deleted accounts** — a deleted account is kept for
   `ACCOUNT_PURGE_GRACE`, then erased by `db:prune`
-- **Google social login** — verified-email requirement (`/oauth/google`)
+- **Sign in with Google** — a button on the SSO login page; ends in the same
+  authorization code as a password login, verified Google email required
 - **M2M (client_credentials)** — a confidential service exchanges client_id +
   client_secret for a short-lived audience-scoped token whose scope is its RBAC
   permissions in the target service
@@ -140,9 +141,19 @@ clients; too high a count lets a caller pick its own bucket. Legacy
 2. Add `http://localhost:3000/oauth/google` as an authorized redirect URI.
 3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
 
-The `/oauth/google` route both initiates the redirect and handles the callback;
-the route path must match `GOOGLE_REDIRECT_URI`. Logins with an unverified email
-are rejected.
+With these set, the `/oauth/authorize` login page shows **Sign in with Google**.
+Google login is part of the authorization code flow, not a separate way to get
+tokens: the link carries the pending authorize request to `/oauth/google`, which
+remembers it in a short-lived cookie and redirects to Google. On the way back
+the user gets the same SSO session and `302` to `redirect_uri?code=…&state=…` as
+after a password login, and the client exchanges the code as usual. The route
+serves both legs, so its path must match `GOOGLE_REDIRECT_URI`.
+
+A Google login is refused, back on the login page, when the Google email is
+unverified or when a local account with that email has a password or an
+unverified email (sign in with the password first). Cancelling at Google also
+returns to the login page. Without `GOOGLE_CLIENT_ID` the button is hidden and
+the route returns 404.
 
 ## API endpoints
 
@@ -159,7 +170,7 @@ are rejected.
 | `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                                                                                                       |
 | `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant                                                                                  |
 | `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                                                                                                       |
-| `GET`    | `/oauth/google`                     | —                                  | Google social login (redirect + callback)                                                                                                    |
+| `GET`    | `/oauth/google`                     | —                                  | Sign in with Google, linked from the authorize login page (redirect + return)                                                                |
 | `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                                                                                                    |
 | `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                                                                                                 |
 | `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                                                                                                       |
@@ -225,9 +236,9 @@ curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
    `code_challenge = base64url(sha256(verifier))`.
 2. Browser hits
    `GET /oauth/authorize?client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…`.
-3. No session → login form; on success the server sets an SSO session cookie and
-   `302`s back to `redirect_uri?code=…&state=…`. An existing session skips the
-   form.
+3. No session → login form (password, or Sign in with Google); on success the
+   server sets an SSO session cookie and `302`s back to
+   `redirect_uri?code=…&state=…`. An existing session skips the form.
 4. Client exchanges the code:
 
 ```bash
