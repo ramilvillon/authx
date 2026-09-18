@@ -32,9 +32,15 @@ import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../src/lib/keys.ts'
 import { signAccessToken } from '../src/lib/jwt.ts'
+import type { Logger } from '../src/lib/logger.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 export const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
+
+// A stand-in for pino's Logger -- these tests never assert on log output,
+// they just need something with an `.error` method to satisfy
+// exchangeGoogleAuthCode's signature.
+const testLogger = { error: () => {} } as unknown as Logger
 
 const testEnv = {
   DB_USER: 'app',
@@ -125,6 +131,7 @@ export function makeTestDeps(
       keySet,
       sessionRepo,
       authCodeRepo,
+      logger: testLogger,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
@@ -342,11 +349,14 @@ export function idToken(claims: Record<string, unknown>): string {
 }
 
 // Stubs Google's token endpoint. `calls` is the assertion surface: an
-// untouched Google proves no code was redeemed.
+// untouched Google proves no code was redeemed. `bodies` captures what was
+// actually POSTed, as URLSearchParams -- e.g. a wrong redirect_uri sent to
+// real Google is a redirect_uri_mismatch that `calls` alone cannot see.
 export function stubGoogleToken(claims: Record<string, unknown>) {
   const calls: string[] = []
+  const bodies: URLSearchParams[] = []
   const real = globalThis.fetch
-  globalThis.fetch = ((input: string | URL | Request) => {
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string'
       ? input
       : input instanceof URL
@@ -354,9 +364,19 @@ export function stubGoogleToken(claims: Record<string, unknown>) {
       : input.url
     calls.push(url)
     if (url.startsWith(GOOGLE_TOKEN_ENDPOINT)) {
+      if (init?.body) {
+        // The real fetch is never invoked, so init.body arrives exactly as
+        // google.ts constructed it -- a URLSearchParams instance, not yet
+        // serialized to a string.
+        bodies.push(
+          init.body instanceof URLSearchParams
+            ? init.body
+            : new URLSearchParams(init.body as string),
+        )
+      }
       return Promise.resolve(Response.json({ id_token: idToken(claims) }))
     }
     throw new Error(`unexpected fetch to ${url}`)
   }) as typeof fetch
-  return { calls, restore: () => globalThis.fetch = real }
+  return { calls, bodies, restore: () => globalThis.fetch = real }
 }

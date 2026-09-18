@@ -92,6 +92,35 @@ Deno.test('a guest binds Google and keeps its id, gaining a verified email', asy
   )
 })
 
+Deno.test('the code exchange sends no redirect_uri -- a native server auth code was never issued against one', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const { accessToken } = await guestWithToken(ctx)
+  const google = stubGoogleToken({
+    sub: 'g-900',
+    email: 'body@example.test',
+    email_verified: true,
+  })
+  let res: Response
+  try {
+    res = await bind(ctx, accessToken, 'native-server-auth-code')
+  } finally {
+    google.restore()
+  }
+  assertEquals(res.status, 200)
+  assertEquals(google.bodies.length, 1, 'exactly one exchange must be sent')
+  const body = google.bodies[0]
+  assertEquals(body.get('code'), 'native-server-auth-code')
+  assertEquals(body.get('client_id'), GOOGLE_ENV.GOOGLE_CLIENT_ID)
+  assertEquals(body.get('client_secret'), GOOGLE_ENV.GOOGLE_CLIENT_SECRET)
+  assertEquals(body.get('grant_type'), 'authorization_code')
+  assert(
+    !body.has('redirect_uri'),
+    'sending redirect_uri on a native server-auth-code exchange is the ' +
+      'classic redirect_uri_mismatch against real Google -- it was never ' +
+      'issued against one',
+  )
+})
+
 Deno.test('binding is idempotent for the same Google account', async () => {
   const ctx = makeTestApp(GOOGLE_ENV)
   const { accessToken } = await guestWithToken(ctx)
@@ -288,4 +317,66 @@ Deno.test('a failed email patch does not leave a dangling social link', async ()
     null,
     'a failed email patch must not leave a dangling social link',
   )
+})
+
+Deno.test('a retry after a double failure reconciles the missing email instead of rubber-stamping success', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const { user, accessToken } = await guestWithToken(ctx)
+
+  // The failure chain I1 describes: link() succeeds, the email patch throws,
+  // and the compensating deleteAllForUser -- against the SAME outage, so not
+  // an independent failure -- also fails. The link survives even though the
+  // patch never landed: the account is now linked-but-emailless.
+  const realUpdate = ctx.userRepo.update.bind(ctx.userRepo)
+  const realDelete = ctx.socialRepo.deleteAllForUser.bind(ctx.socialRepo)
+  ctx.userRepo.update = () => Promise.reject(new Error('simulated db outage'))
+  ctx.socialRepo.deleteAllForUser = () =>
+    Promise.reject(new Error('simulated db outage'))
+
+  const claims = {
+    sub: 'g-950',
+    email: 'reconcile@example.test',
+    email_verified: true,
+  }
+  let google = stubGoogleToken(claims)
+  let first: Response
+  try {
+    first = await bind(ctx, accessToken)
+  } finally {
+    google.restore()
+  }
+  assertEquals(first.status, 500)
+
+  ctx.userRepo.update = realUpdate
+  ctx.socialRepo.deleteAllForUser = realDelete
+
+  // Confirm the trap actually sprang: linked to Google, still no email. If
+  // this assertion ever fails, the scenario below is not being exercised.
+  assert(
+    await ctx.socialRepo.findByProviderAccount('google', 'g-950'),
+    'the link must have survived the double failure',
+  )
+  assertEquals((await ctx.userRepo.findById(user.id))?.email, null)
+
+  // The outage clears; the client retries the exact same bind.
+  google = stubGoogleToken(claims)
+  let second: Response
+  try {
+    second = await bind(ctx, accessToken)
+  } finally {
+    google.restore()
+  }
+  assertEquals(
+    second.status,
+    200,
+    'a retry must succeed once the outage clears',
+  )
+  const after = await ctx.userRepo.findById(user.id)
+  assertEquals(
+    after?.email,
+    'reconcile@example.test',
+    'the retry must reconcile the missing email, not rubber-stamp success ' +
+      'the way an unconditional existing?.userId === userId return would',
+  )
+  assertEquals(after?.emailVerified, true)
 })
