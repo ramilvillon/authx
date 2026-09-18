@@ -1,5 +1,11 @@
 import { assert, assertEquals } from '@std/assert'
-import { keySet, makeTestApp, seedDefaultService } from '../helpers.ts'
+import {
+  GOOGLE_ENV,
+  keySet,
+  makeTestApp,
+  seedDefaultService,
+  stubGoogleToken,
+} from '../helpers.ts'
 import { hashPassword } from '../../src/lib/password.ts'
 import { verifyAccessToken } from '../../src/lib/jwt.ts'
 
@@ -194,4 +200,129 @@ Deno.test('a guest has no email and reports none', async () => {
   })
   assertEquals(me.status, 200)
   assertEquals((await me.json()).email, '')
+})
+
+// Local copy, not imported from social-links.test.ts: importing one Deno test
+// file from another evaluates it and re-registers its Deno.test calls, and
+// this is eight lines -- not worth a cross-file dependency.
+const bind = (
+  ctx: ReturnType<typeof makeTestApp>,
+  accessToken: string,
+  code = 'server-auth-code',
+) =>
+  ctx.app.request('/users/me/social-links', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ provider: 'google', code }),
+  })
+
+Deno.test('the whole arc: play as a guest, bind Google, come back on a new device', async () => {
+  const ctx = makeTestApp({ ...GOOGLE_ENV })
+  const { audience } = await seedGuestService(ctx, true)
+
+  // 1. First launch: no sign-up.
+  const cred = await (await createGuest(ctx.app)).json()
+
+  // 2. Relaunch: the stored credential still works. This is the call the
+  //    client makes on every single launch.
+  const first = await grant(ctx.app, {
+    grant_type: 'password',
+    username: cred.username,
+    password: cred.password,
+    audience,
+  })
+  assertEquals(first.status, 200)
+  const { access_token } = await first.json()
+  const me = await (await ctx.app.request('/users/me', {
+    headers: { authorization: `Bearer ${access_token}` },
+  })).json()
+  const playerId = me.id
+
+  // 3. Bind Google.
+  const google = stubGoogleToken({
+    sub: 'g-arc',
+    email: 'arc@example.test',
+    email_verified: true,
+  })
+  try {
+    assertEquals((await bind(ctx, access_token)).status, 200)
+  } finally {
+    google.restore()
+  }
+
+  // 4. The old device keeps working, unchanged. The bind must not have
+  //    touched passwordHash or the username.
+  const after = await grant(ctx.app, {
+    grant_type: 'password',
+    username: cred.username,
+    password: cred.password,
+    audience,
+  })
+  assertEquals(after.status, 200, 'the stored credential must survive a bind')
+
+  // 5. Same account throughout -- the entire point of the feature. Progress is
+  //    keyed on this id.
+  const meAfter = await (await ctx.app.request('/users/me', {
+    headers: {
+      authorization: `Bearer ${(await after.json()).access_token}`,
+    },
+  })).json()
+  assertEquals(meAfter.id, playerId)
+
+  // 6. The account now has a verified address, so the email-dependent flows
+  //    that were unreachable for a guest have opened up.
+  const row = await ctx.userRepo.findById(playerId)
+  assertEquals(row?.email, 'arc@example.test')
+  assertEquals(row?.emailVerified, true)
+})
+
+Deno.test('a guest cannot start an account deletion, but can once it has bound', async () => {
+  const ctx = makeTestApp({ ...GOOGLE_ENV })
+  const { audience } = await seedGuestService(ctx, true)
+  const cred = await (await createGuest(ctx.app)).json()
+  const { access_token } = await (await grant(ctx.app, {
+    grant_type: 'password',
+    username: cred.username,
+    password: cred.password,
+    audience,
+  })).json()
+
+  const me = await (await ctx.app.request('/users/me', {
+    headers: { authorization: `Bearer ${access_token}` },
+  })).json()
+
+  // Self-service deletion is DELETE /users/:id on your own id: it does not
+  // delete, it sends a confirmation link to the address on file (202
+  // confirmation_sent). A guest has no address, so it cannot be authorised.
+  const del = () =>
+    ctx.app.request(`/users/${me.id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${access_token}` },
+    })
+
+  const before = await del()
+  assertEquals(before.status, 400)
+  assertEquals((await before.json()).error.code, 'account_has_no_email')
+  assertEquals(ctx.sentEmails.length, 0, 'nothing may be sent')
+
+  const google = stubGoogleToken({
+    sub: 'g-del',
+    email: 'del@example.test',
+    email_verified: true,
+  })
+  try {
+    await bind(ctx, access_token)
+  } finally {
+    google.restore()
+  }
+
+  // After: there is an address, so the normal out-of-band flow works.
+  const after = await del()
+  assertEquals(after.status, 202)
+  assertEquals((await after.json()).status, 'confirmation_sent')
+  assertEquals(ctx.sentEmails.at(-1)?.to, 'del@example.test')
+  assertEquals(ctx.sentEmails.at(-1)?.purpose, 'account_deletion')
 })
