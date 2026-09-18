@@ -16,7 +16,12 @@ import { AppError } from '../../lib/errors.ts'
 export type UserService = ReturnType<typeof createUserService>
 
 function toPublic(u: UserRecord): PublicUser {
-  return { id: u.id, email: u.email, createdAt: u.createdAt }
+  return {
+    id: u.id,
+    email: u.email,
+    username: u.username ?? null,
+    createdAt: u.createdAt,
+  }
 }
 
 export function createUserService(deps: {

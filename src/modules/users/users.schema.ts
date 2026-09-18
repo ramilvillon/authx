@@ -27,7 +27,8 @@ export const updateUserSchema = z.object({
 
 export const publicUserSchema = z.object({
   id: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
+  username: z.string().nullable(),
   createdAt: z.date(),
 })
 

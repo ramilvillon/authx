@@ -65,10 +65,18 @@ const users = new Hono<AppEnv>()
     validator('json', registerSchema),
     async (c) => {
       const user = await c.var.userService.register(c.req.valid('json'))
-      try {
-        await c.var.verificationService.startVerification(user.id, user.email)
-      } catch (err) {
-        c.var.logger.warn({ err }, 'verification email failed to send')
+      // registerSchema requires an email, so this is always set here -- the
+      // guard is a type fix (PublicUser.email is now nullable for guests
+      // created elsewhere), not a reachable branch on this route.
+      if (user.email) {
+        try {
+          await c.var.verificationService.startVerification(
+            user.id,
+            user.email,
+          )
+        } catch (err) {
+          c.var.logger.warn({ err }, 'verification email failed to send')
+        }
       }
       return c.json(user, 201)
     },

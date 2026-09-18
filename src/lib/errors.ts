@@ -36,6 +36,10 @@ export const ERRORS = {
     status: 400,
     message: 'verification link expired',
   },
+  account_has_no_email: {
+    status: 400,
+    message: 'this account has no email address',
+  },
   user_not_found: { status: 404, message: 'user not found' },
   org_not_found: { status: 404, message: 'organization not found' },
   service_not_found: { status: 404, message: 'service not found' },

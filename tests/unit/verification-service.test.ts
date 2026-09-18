@@ -25,6 +25,9 @@ async function seedUser(
 Deno.test('startVerification sends a well-formed link and verifyEmail sets emailVerified', async () => {
   const ctx = makeTestDeps()
   const user = await seedUser(ctx)
+  // seedUser always sets an email; narrow the UserRecord type rather than
+  // cast, since UserRecord.email is string | null for a guest elsewhere.
+  assert(user.email)
   await ctx.deps.verificationService.startVerification(user.id, user.email)
   assertEquals(ctx.sentEmails.length, 1)
   const link = ctx.sentEmails[0].link
@@ -48,6 +51,7 @@ Deno.test('verifyEmail rejects an unknown, replayed, or email-mismatched token',
   }
   assert(await throws(() => ctx.deps.verificationService.verifyEmail('nope')))
 
+  assert(user.email)
   await ctx.deps.verificationService.startVerification(user.id, user.email)
   const token = new URL(ctx.sentEmails[0].link).searchParams.get('token')!
   await ctx.deps.verificationService.verifyEmail(token) // consumes
@@ -91,6 +95,7 @@ Deno.test('verifyEmail does not verify an address swapped in after the binding c
     config: ctx.deps.config,
   })
 
+  assert(user.email)
   await service.startVerification(user.id, user.email)
   const token = new URL(links[0]).searchParams.get('token')!
   await assertRejects(() => service.verifyEmail(token))
