@@ -36,6 +36,7 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
       await db.insert(appServices).values({
         ...s,
         redirectUris: JSON.stringify(s.redirectUris),
+        guestsEnabled: s.guestsEnabled ?? false,
       })
       return s
     },

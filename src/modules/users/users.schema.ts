@@ -27,8 +27,23 @@ export const updateUserSchema = z.object({
 
 export const publicUserSchema = z.object({
   id: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
+  username: z.string().nullable(),
   createdAt: z.date(),
+})
+
+export const guestSchema = z.object({ client_id: z.string().min(1) })
+
+export const guestCredentialSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+})
+
+// z.literal('google'), not z.string() -- an allow-list, so a second provider
+// must be added deliberately rather than falling through.
+export const socialLinkSchema = z.object({
+  provider: z.literal('google'),
+  code: z.string().min(1),
 })
 
 export type RegisterInput = z.infer<typeof registerSchema>

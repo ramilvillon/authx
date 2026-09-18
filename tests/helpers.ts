@@ -32,9 +32,15 @@ import type { OrgRepository } from '../src/modules/orgs/orgs.repository.ts'
 import type { RbacRepository } from '../src/modules/rbac/rbac.repository.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../src/lib/keys.ts'
 import { signAccessToken } from '../src/lib/jwt.ts'
+import type { Logger } from '../src/lib/logger.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 export const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
+
+// A stand-in for pino's Logger -- these tests never assert on log output,
+// they just need something with an `.error` method to satisfy
+// exchangeGoogleAuthCode's signature.
+const testLogger = { error: () => {} } as unknown as Logger
 
 const testEnv = {
   DB_USER: 'app',
@@ -125,6 +131,7 @@ export function makeTestDeps(
       keySet,
       sessionRepo,
       authCodeRepo,
+      logger: testLogger,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
@@ -158,22 +165,27 @@ export function makeTestApp(envOverrides: Record<string, string> = {}) {
 
 // Seeds a default org + service and adds userId as a member.
 // Returns the audience string so callers can pass it to authHeader/passwordGrant.
+// org.slug, service.client_id and service.audience are each UNIQUE, so every
+// call gets a fresh suffix -- a test that seeds two services (e.g. two guests
+// in one test) would otherwise collide on the shared literal: masked
+// in-memory (first match wins / last write wins) but a real duplicate-key
+// error against Drizzle/MySQL.
 export async function seedDefaultService(
   orgRepo: OrgRepository,
   userId: string,
-  audience = 'test-service',
+  audience = `test-service-${crypto.randomUUID()}`,
 ): Promise<string> {
   const now = new Date()
   const org = await orgRepo.createOrg({
     id: crypto.randomUUID(),
-    slug: 'test',
+    slug: `test-${crypto.randomUUID()}`,
     name: 'Test Org',
     createdAt: now,
   })
   await orgRepo.createService({
     id: crypto.randomUUID(),
     orgId: org.id,
-    clientId: 'cid_test',
+    clientId: `cid_test_${crypto.randomUUID()}`,
     clientSecretHash: null,
     name: 'Test Service',
     slug: 'test-service',
@@ -317,3 +329,54 @@ const unescapeHtml = (s: string) =>
     (_, e) =>
       ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e as string]!,
   )
+
+export const GOOGLE_ENV = {
+  GOOGLE_CLIENT_ID: 'test-client-id',
+  GOOGLE_CLIENT_SECRET: 'test-client-secret',
+  GOOGLE_REDIRECT_URI: 'http://localhost/oauth/google',
+}
+export const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
+
+// A real JWT shape, because the bind flow decodes the id_token payload. It is
+// NOT signature-verified: it arrives over TLS in the response to our own
+// client-authenticated POST, so the channel is the proof. The header and
+// signature are therefore deliberately junk.
+export function idToken(claims: Record<string, unknown>): string {
+  const b64 = (o: unknown) =>
+    btoa(JSON.stringify(o)).replaceAll('+', '-').replaceAll('/', '_')
+      .replaceAll('=', '')
+  return `${b64({ alg: 'RS256' })}.${b64(claims)}.sig`
+}
+
+// Stubs Google's token endpoint. `calls` is the assertion surface: an
+// untouched Google proves no code was redeemed. `bodies` captures what was
+// actually POSTed, as URLSearchParams -- e.g. a wrong redirect_uri sent to
+// real Google is a redirect_uri_mismatch that `calls` alone cannot see.
+export function stubGoogleToken(claims: Record<string, unknown>) {
+  const calls: string[] = []
+  const bodies: URLSearchParams[] = []
+  const real = globalThis.fetch
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string'
+      ? input
+      : input instanceof URL
+      ? input.toString()
+      : input.url
+    calls.push(url)
+    if (url.startsWith(GOOGLE_TOKEN_ENDPOINT)) {
+      if (init?.body) {
+        // The real fetch is never invoked, so init.body arrives exactly as
+        // google.ts constructed it -- a URLSearchParams instance, not yet
+        // serialized to a string.
+        bodies.push(
+          init.body instanceof URLSearchParams
+            ? init.body
+            : new URLSearchParams(init.body as string),
+        )
+      }
+      return Promise.resolve(Response.json({ id_token: idToken(claims) }))
+    }
+    throw new Error(`unexpected fetch to ${url}`)
+  }) as typeof fetch
+  return { calls, bodies, restore: () => globalThis.fetch = real }
+}

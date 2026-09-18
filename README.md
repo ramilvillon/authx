@@ -125,6 +125,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                            |
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                           |
 | `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                              |
+| `GUEST_RATE_LIMIT`         | `10`                                 | per-IP max `POST /users/guest` creations per `RATE_LIMIT_WINDOW_MS`                                             |
 | `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                                     |
 
 `TRUST_PROXY` must be the **exact** number of reverse proxies in front of this
@@ -155,12 +156,50 @@ unverified email (sign in with the password first). Cancelling at Google also
 returns to the login page. Without `GOOGLE_CLIENT_ID` the button is hidden and
 the route returns 404.
 
+### Guest accounts
+
+A service opts in with `guests_enabled` (set via `POST /orgs/:id/services`).
+`POST /users/guest` then takes `{ "client_id": "<cid>" }`, unauthenticated, and
+creates an account with a generated username and password and no email,
+returning `{ username, password }` **once** — they are not retrievable again, so
+the client stores them and re-authenticates on relaunch with
+`grant_type=password`, which accepts a `username` as well as an email in that
+field.
+
+The account binds to Google later, while authenticated, via
+`POST /users/me/social-links`
+(`{ "provider": "google", "code": "<server auth
+code>" }`), taking a one-time
+**server auth code from a native Google SDK** — not an id_token, and not the
+browser redirect flow's authorization code. A successful bind adds the Google
+address as a second, verified sign-in identifier; the generated username and
+password keep working unchanged.
+
+Two things a client integration needs to know that are not obvious from the API
+surface:
+
+- **A failed token refresh should trigger a silent re-authentication with the
+  stored username/password, not a sign-in prompt.** The realistic trigger is a
+  restored phone backup carrying a stale refresh token onto a second device,
+  where the first refresh is a replay by definition — not an attacker. The
+  stored credential is still valid, so recovery is automatic; only a second
+  failure (the credential itself rejected) should send the player to sign-in.
+- **Google sign-in on a new device is the browser redirect flow
+  (`/oauth/authorize`), never the native SDK.** There is deliberately no
+  unauthenticated endpoint that accepts a server auth code as a sign-in — the
+  bind endpoint above requires a bearer token. A fresh install with no stored
+  credential and no existing session reaches Google only by opening
+  `/oauth/authorize` (a system browser or custom tab works for a native app;
+  PKCE is mandatory).
+
 ## API endpoints
 
 | Method   | Path                                | Auth                               | Description                                                                                                                                  |
 | -------- | ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/health`                           | —                                  | Liveness check                                                                                                                               |
 | `POST`   | `/users`                            | —                                  | Register a user (no roles; roles are per-service, granted via the management API)                                                            |
+| `POST`   | `/users/guest`                      | —                                  | Create a guest account for a `client_id` with `guests_enabled`; returns a one-time username + password                                       |
+| `POST`   | `/users/me/social-links`            | Bearer                             | Bind a Google account via a native-SDK server auth code                                                                                      |
 | `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                                                                                                                   |
 | `GET`    | `/users`                            | Bearer + `users:list`              | List users                                                                                                                                   |
 | `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                                                                                                   |
@@ -218,7 +257,8 @@ db:seed` creates that user as a platform `admin`. Both are empty in
 still the `change-me-please` placeholder older templates shipped. Get an admin
 token with a password grant for `audience: "platform"`.
 
-Example password-grant flow:
+Example password-grant flow (`username` accepts a registered user's email or a
+guest's generated username):
 
 ```bash
 # obtain a token pair

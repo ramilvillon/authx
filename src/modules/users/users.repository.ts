@@ -1,6 +1,7 @@
 export type UserRecord = {
   id: string
-  email: string
+  email: string | null
+  username?: string | null
   passwordHash: string | null
   createdAt: Date
   updatedAt: Date
@@ -21,6 +22,8 @@ export type UserRepository = {
   create(user: UserRecord): Promise<UserRecord>
   findById(id: string): Promise<UserRecord | null>
   findByEmail(email: string): Promise<UserRecord | null>
+  // Soft-delete-filtered, exactly like findByEmail: this is a login path.
+  findByUsername(username: string): Promise<UserRecord | null>
   findWithAccessById(id: string): Promise<UserWithAccess | null>
   update(
     id: string,
@@ -78,7 +81,20 @@ export function createInMemoryUserRepository(
     },
     findByEmail(email) {
       for (const u of byId.values()) {
-        if (u.email === email && !u.deletedAt) return Promise.resolve({ ...u })
+        // `u.email === email` alone would match null-to-null; MySQL's
+        // `WHERE email = NULL` never matches. Keep the double as strict as
+        // the database or it hides bugs.
+        if (u.email !== null && u.email === email && !u.deletedAt) {
+          return Promise.resolve({ ...u })
+        }
+      }
+      return Promise.resolve(null)
+    },
+    findByUsername(username) {
+      for (const u of byId.values()) {
+        if (u.username && u.username === username && !u.deletedAt) {
+          return Promise.resolve({ ...u })
+        }
       }
       return Promise.resolve(null)
     },
@@ -111,7 +127,9 @@ export function createInMemoryUserRepository(
     },
     findAnyByEmail(email) {
       for (const u of byId.values()) {
-        if (u.email === email) return Promise.resolve({ ...u })
+        if (u.email !== null && u.email === email) {
+          return Promise.resolve({ ...u })
+        }
       }
       return Promise.resolve(null)
     },

@@ -14,12 +14,14 @@ import type {
 import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import type { SessionRepository } from './session.repository.ts'
 import type { AuthCodeRepository } from './authcode.repository.ts'
+import type { Logger } from '../../lib/logger.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { signAccessToken, signIdToken } from '../../lib/jwt.ts'
 import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
 import { verifyChallenge } from '../../lib/pkce.ts'
+import { exchangeGoogleAuthCode } from '../../lib/google.ts'
 
 export type AuthService = ReturnType<typeof createAuthService>
 
@@ -33,9 +35,10 @@ export function createAuthService(deps: {
   keySet: KeySet
   sessionRepo: SessionRepository
   authCodeRepo: AuthCodeRepository
+  logger: Logger
 }) {
   const { userRepo, tokenRepo, config, keySet, orgRepo, rbacRepo } = deps
-  const { sessionRepo, authCodeRepo } = deps
+  const { sessionRepo, authCodeRepo, logger } = deps
 
   // Computed once and reused so failed logins for missing/passwordless users
   // still pay the bcrypt cost, equalizing response timing (no user enumeration).
@@ -124,13 +127,19 @@ export function createAuthService(deps: {
 
   return {
     async passwordGrant(
-      email: string,
+      identifier: string,
       password: string,
       audience: string,
     ): Promise<TokenPair> {
-      const user = await userRepo.findByEmail(email)
+      // An email or a generated username. Generated usernames never contain
+      // '@', so the test is unambiguous in both directions.
+      const user = identifier.includes('@')
+        ? await userRepo.findByEmail(identifier)
+        : await userRepo.findByUsername(identifier)
       // Always run a bcrypt comparison to keep timing constant across the
-      // missing-user, passwordless-user, and wrong-password branches.
+      // missing-user, passwordless-user, and wrong-password branches -- on
+      // BOTH lookup paths, which is why the lookup is the only thing that
+      // branches.
       const hash = user?.passwordHash ?? await getDummyHash()
       const passwordOk = await verifyPassword(password, hash)
       if (!user || !user.passwordHash || !passwordOk) {
@@ -466,6 +475,119 @@ export function createAuthService(deps: {
         access_token,
         token_type: 'Bearer',
         expires_in: config.accessTokenTtl,
+      }
+    },
+    // Binding while authenticated: the bearer token proves which local row to
+    // attach to, rather than inferring it from an email string the way
+    // loginWithGoogle's fallback path does.
+    async linkGoogleToUser(userId: string, code: string): Promise<void> {
+      const google = config.google
+      // Half-configured (a client id with no secret) must fail closed here,
+      // not three lines down as an opaque invalid_grant from Google.
+      if (!google.clientId || !google.clientSecret) {
+        throw AppError.of('google_login_disabled')
+      }
+      // Looked up BEFORE redeeming the code: a client-credentials (service)
+      // token has no user row, and requireAuth alone does not reject it. Doing
+      // this after the exchange would burn a one-time Google code on a
+      // request that was always going to fail user_not_found.
+      const user = await userRepo.findById(userId)
+      if (!user) throw AppError.of('user_not_found')
+
+      const identity = await exchangeGoogleAuthCode(code, {
+        clientId: google.clientId,
+        clientSecret: google.clientSecret,
+      }, logger)
+      // Never link on an unproven address -- same rule as loginWithGoogle.
+      if (!identity.emailVerified) {
+        throw AppError.of('google_email_unverified')
+      }
+
+      const existing = await deps.socialRepo.findByProviderAccount(
+        'google',
+        identity.sub,
+      )
+      if (existing && existing.userId !== userId) {
+        throw AppError.of('social_account_already_linked')
+      }
+
+      // Only an account with no address takes Google's. A user who already has
+      // one keeps it: without this condition, binding would be a second route
+      // to an unauthorised email change (the F6 shape).
+      const takesEmail = !user.email
+
+      // A retry of a FULLY complete bind (already linked, already has an
+      // email) is success with no side effects. But a retry that is linked
+      // and still has no email is the shape decision 8 rejects: an earlier
+      // attempt's email patch AND its compensating deleteAllForUser both
+      // failed against the same outage (they are not independent), leaving
+      // the account linked-but-emailless forever unless this reconciles it.
+      // Falling through re-runs the collision check and the adoption below.
+      if (existing && !takesEmail) return
+
+      if (takesEmail && await userRepo.findAnyByEmail(identity.email)) {
+        // findAnyByEmail, not findByEmail: a soft-deleted row still occupies
+        // the address until db:prune erases it. Fires on the reconcile path
+        // too: if the address was taken by someone else in the meantime, the
+        // answer is still email_taken, never a silent second success.
+        throw AppError.of('email_taken')
+      }
+
+      if (!existing) {
+        // link() first: UNIQUE(provider, provider_account_id) is what
+        // atomically claims the Google account against a concurrent bind.
+        await deps.socialRepo.link({
+          id: crypto.randomUUID(),
+          userId,
+          provider: 'google',
+          providerAccountId: identity.sub,
+        })
+      }
+      if (takesEmail) {
+        // Through the internal repo patch, never a client-facing schema:
+        // emailVerified is mass-assignment protected (Phase 4).
+        //
+        // The link must never survive a failed patch IF this call is the one
+        // that created it (!existing) -- "failed" has two shapes here.
+        // users.repository.drizzle.ts's update() throws straight out of a
+        // duplicate-key insert rather than returning null -- it never reaches
+        // its own `return findById(id)` -- so a lost race on the address
+        // surfaces as an exception, not a falsy return. Catch it, compensate,
+        // and rethrow the original error rather than relabelling it
+        // email_taken: we have no driver-independent way here to tell a
+        // duplicate-key race (the likely cause, given the findAnyByEmail
+        // pre-check just above) apart from an unrelated failure such as a DB
+        // outage, and reporting an outage as email_taken would send the
+        // client down the wrong path.
+        //
+        // deleteAllForUser is safe as this compensation only because a guest
+        // reaching this branch has no other social link to lose -- Google is
+        // the only provider this codebase supports. A second provider or an
+        // unlink endpoint would make this collateral deletion; whoever adds
+        // one should delete by (provider, providerAccountId) instead.
+        //
+        // On the reconcile path (existing is already ours from a previous
+        // attempt) a second failure must NOT delete that link -- it is real
+        // and this call did not create it -- so compensation only runs when
+        // this call is the one that created the link.
+        let patched
+        try {
+          patched = await userRepo.update(userId, {
+            email: identity.email,
+            emailVerified: true,
+          })
+        } catch (err) {
+          if (!existing) await deps.socialRepo.deleteAllForUser(userId)
+          throw err
+        }
+        if (!patched) {
+          // The clean (non-throwing) way to lose the row: it vanished --
+          // e.g. soft-deleted -- between findById above and this update, so
+          // update() matched nothing rather than hitting a constraint. Same
+          // compensation.
+          if (!existing) await deps.socialRepo.deleteAllForUser(userId)
+          throw AppError.of('email_taken')
+        }
       }
     },
   }

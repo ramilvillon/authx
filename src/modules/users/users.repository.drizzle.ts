@@ -39,6 +39,12 @@ export function createDrizzleUserRepository(db: Database): UserRepository {
       })
       return row ?? null
     },
+    async findByUsername(username) {
+      const row = await db.query.users.findFirst({
+        where: and(eq(users.username, username), live),
+      })
+      return row ?? null
+    },
     async findAnyByEmail(email) {
       // Deliberately unfiltered: users.email is UNIQUE, so a soft-deleted row
       // still occupies the address.

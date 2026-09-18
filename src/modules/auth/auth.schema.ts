@@ -3,7 +3,9 @@ import { z } from 'zod'
 export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
   z.object({
     grant_type: z.literal('password'),
-    username: z.string().email(),
+    // Either an email or a generated guest username. NOT z.string().email():
+    // that rejected every guest credential at the schema, before any lookup.
+    username: z.string().min(1),
     password: z.string().min(1),
     audience: z.string().min(1),
   }),

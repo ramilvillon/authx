@@ -15,6 +15,9 @@ export type AppServiceRecord = {
   audience: string
   type: 'public' | 'confidential'
   redirectUris: string[]
+  // Optional so existing literals in tests and seed.ts keep compiling.
+  // Always read as `=== true` so an absent value fails closed.
+  guestsEnabled?: boolean
   createdAt: Date
 }
 

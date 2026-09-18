@@ -12,9 +12,13 @@ import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
 import { loadConfig } from '../../src/config.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
+import type { Logger } from '../../src/lib/logger.ts'
 
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
+
+// A stand-in for pino's Logger -- these tests never assert on log output.
+const testLogger = { error: () => {} } as unknown as Logger
 
 function setup() {
   const config = loadConfig({
@@ -49,6 +53,7 @@ function setup() {
     keySet,
     sessionRepo,
     authCodeRepo: createInMemoryAuthCodeRepository(),
+    logger: testLogger,
   })
   return { authService, userService, orgRepo, rbacRepo }
 }

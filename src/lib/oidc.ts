@@ -1,6 +1,6 @@
 // Fields an OIDC claim set can be built from — a UserRecord is assignable.
 export type OidcUser = {
-  email: string
+  email: string | null
   emailVerified?: boolean
   name?: string | null
   givenName?: string | null
@@ -25,7 +25,10 @@ export function claimsForScopes(
   scopes: string[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  if (scopes.includes('email')) {
+  // A guest has no address. Omit both claims rather than emitting null or a
+  // bare `email_verified: false`, which would assert something about an
+  // address that does not exist.
+  if (scopes.includes('email') && user.email) {
     out.email = user.email
     out.email_verified = user.emailVerified ?? false
   }

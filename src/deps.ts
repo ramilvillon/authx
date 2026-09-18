@@ -89,6 +89,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       keySet,
       sessionRepo,
       authCodeRepo,
+      logger,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,

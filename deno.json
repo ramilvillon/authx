@@ -42,7 +42,11 @@
     "pino-pretty": "npm:pino-pretty@^13.0.0"
   },
   "nodeModulesDir": "auto",
-  "fmt": { "semiColons": false, "singleQuote": true },
+  "fmt": {
+    "semiColons": false,
+    "singleQuote": true,
+    "exclude": ["src/db/migrations/meta"]
+  },
   "lint": { "rules": { "tags": ["recommended"] } },
   "compilerOptions": { "strict": true }
 }

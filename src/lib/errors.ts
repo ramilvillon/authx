@@ -36,10 +36,18 @@ export const ERRORS = {
     status: 400,
     message: 'verification link expired',
   },
+  account_has_no_email: {
+    status: 400,
+    message: 'this account has no email address',
+  },
   user_not_found: { status: 404, message: 'user not found' },
   org_not_found: { status: 404, message: 'organization not found' },
   service_not_found: { status: 404, message: 'service not found' },
   email_taken: { status: 409, message: 'email already registered' },
+  social_account_already_linked: {
+    status: 409,
+    message: 'that account is already linked to a different user',
+  },
   org_slug_taken: {
     status: 409,
     message: 'an org with this slug already exists',
@@ -70,6 +78,12 @@ export const ERRORS = {
   google_login_disabled: {
     status: 404,
     message: 'google login is not configured',
+  },
+  // 404, matching google_login_disabled: a capability the deployment has not
+  // enabled should not be distinguishable from one that does not exist.
+  guest_accounts_disabled: {
+    status: 404,
+    message: 'guest accounts are not enabled for this client',
   },
   authorize_request_expired: {
     status: 400,

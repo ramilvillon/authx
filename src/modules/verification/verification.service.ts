@@ -82,6 +82,8 @@ export function createVerificationService(deps: {
     async startEmailChange(userId: string, newEmail: string): Promise<void> {
       const user = await userRepo.findById(userId)
       if (!user) throw AppError.of('user_not_found')
+      // A guest has no address to authorise the change from.
+      if (!user.email) throw AppError.of('account_has_no_email')
       if (user.email === newEmail) return
       await startConfirmation(userId, 'email_change', newEmail, user.email)
     },
@@ -90,6 +92,8 @@ export function createVerificationService(deps: {
     async startAccountDeletion(userId: string): Promise<void> {
       const user = await userRepo.findById(userId)
       if (!user) throw AppError.of('user_not_found')
+      // A guest has no address to authorise the deletion from.
+      if (!user.email) throw AppError.of('account_has_no_email')
       await startConfirmation(
         userId,
         'account_deletion',
@@ -149,6 +153,10 @@ export function createVerificationService(deps: {
     async startPasswordReset(email: string): Promise<void> {
       const user = await userRepo.findByEmail(email)
       if (!user) return
+      // findByEmail can never return a null-email row, so this is a type
+      // narrowing, not a reachable guest path -- kept anyway so this fails
+      // closed rather than trusting that invariant silently.
+      if (!user.email) return
       // Mail the STORED address, not the request string: the lookup is
       // collation-insensitive but the token is bound to one exact spelling.
       await startConfirmation(user.id, 'password_reset', user.email, user.email)
@@ -214,6 +222,10 @@ export function createVerificationService(deps: {
     async resend(email: string): Promise<void> {
       const user = await userRepo.findByEmail(email)
       if (!user || user.emailVerified) return
+      // findByEmail can never return a null-email row, so this is a type fix,
+      // not a behaviour change -- already unreachable for a guest. Keep it
+      // failing closed anyway; the 204 above already hides the difference.
+      if (!user.email) return
       // Bind the token to (and mail it to) the stored address, not the request
       // string: the DB lookup is collation-insensitive but verifyEmail compares
       // with `!==`, so echoing the caller's casing yields a permanently dead link.

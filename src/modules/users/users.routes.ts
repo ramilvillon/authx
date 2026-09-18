@@ -5,8 +5,11 @@ import { resolver, validator } from 'hono-openapi/zod'
 import type { OpenAPIV3 } from 'openapi-types'
 import type { AppEnv } from '../../deps.ts'
 import {
+  guestCredentialSchema,
+  guestSchema,
   publicUserSchema,
   registerSchema,
+  socialLinkSchema,
   updateUserSchema,
 } from './users.schema.ts'
 import { createMiddleware } from 'hono/factory'
@@ -65,12 +68,97 @@ const users = new Hono<AppEnv>()
     validator('json', registerSchema),
     async (c) => {
       const user = await c.var.userService.register(c.req.valid('json'))
-      try {
-        await c.var.verificationService.startVerification(user.id, user.email)
-      } catch (err) {
-        c.var.logger.warn({ err }, 'verification email failed to send')
+      // registerSchema requires an email, so this is always set here -- the
+      // guard is a type fix (PublicUser.email is now nullable for guests
+      // created elsewhere), not a reachable branch on this route.
+      if (user.email) {
+        try {
+          await c.var.verificationService.startVerification(
+            user.id,
+            user.email,
+          )
+        } catch (err) {
+          c.var.logger.warn({ err }, 'verification email failed to send')
+        }
       }
       return c.json(user, 201)
+    },
+  )
+  .post(
+    '/guest',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'Create a guest account',
+      description:
+        'Creates an account with a generated username and password and no ' +
+        "email address, and makes it a member of the client service's org. " +
+        'The credentials are returned once and are not retrievable again; ' +
+        'the client stores them and re-authenticates with grant_type=password.',
+      responses: {
+        201: {
+          description: 'Created',
+          content: json(resolver(guestCredentialSchema)),
+        },
+        400: { description: 'Invalid input' },
+        404: { description: 'Guest accounts are not enabled for this client' },
+        429: { description: 'Too many guest accounts from this address' },
+      },
+    }),
+    // Unauthenticated and it creates a row, so it needs its own bucket. There
+    // is no authenticated user here, so makeRateLimiter falls back to the
+    // client address. This is the ONLY bound on guest row creation -- there is
+    // no reaper for abandoned guests (design decision: cleanup is rate-limit
+    // only) -- so it gets its own budget (GUEST_RATE_LIMIT), tunable
+    // independently of the lenient global default, which would barely
+    // tighten anything over ordinary traffic. Registered BEFORE the
+    // validator, so it must count only successful creations: otherwise a
+    // stream of malformed bodies spends the same budget as real players, and
+    // the budget exists to bound rows, not requests.
+    (c, next) =>
+      makeRateLimiter(c.var.rateStore, {
+        windowMs: c.var.config.rateLimit.windowMs,
+        limit: c.var.config.rateLimit.guestMax,
+        prefix: 'guest',
+        countOnly: (status) => status === 201,
+      })(c, next),
+    validator('json', guestSchema),
+    async (c) => {
+      const cred = await c.var.userService.createGuest(
+        c.req.valid('json').client_id,
+      )
+      return c.json(cred, 201)
+    },
+  )
+  .post(
+    '/me/social-links',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'Link a social account to the authenticated user',
+      description:
+        'Takes a one-time server auth code from a native Google SDK and ' +
+        'attaches that Google account to the caller. An account with no ' +
+        'email address also gains the Google address, verified.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        200: { description: 'Linked (idempotent for the same account)' },
+        400: { description: 'Invalid input, or the code was not redeemable' },
+        401: { description: 'Missing or invalid access token' },
+        403: { description: 'The Google email is not verified' },
+        404: { description: 'Google login is not configured' },
+        409: {
+          description:
+            'That Google account, or its email address, belongs to another user',
+        },
+      },
+    }),
+    requireAuth,
+    validator('json', socialLinkSchema),
+    async (c) => {
+      await c.var.authService.linkGoogleToUser(
+        c.var.user.id,
+        c.req.valid('json').code,
+      )
+      return c.json({ ok: true }, 200)
     },
   )
   .get(
