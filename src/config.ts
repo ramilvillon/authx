@@ -68,6 +68,11 @@ const schema = z.object({
   ACCOUNT_PURGE_GRACE: z.coerce.number().default(2592000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
+  // Guest creation gets its own budget, tighter than the global default and
+  // tunable independently of it: it is keyed on IP (no authenticated user
+  // exists yet), and a mobile game behind carrier-grade NAT can have many
+  // legitimate players sharing one address.
+  GUEST_RATE_LIMIT: z.coerce.number().default(10),
   // Number of reverse proxies in front of this service. 0 means never trust
   // X-Forwarded-For. The count matters: proxies *append* to the header, so the
   // client-supplied prefix is only skipped when the hop count is exact.
@@ -119,7 +124,7 @@ export type Config = {
   google: { clientId: string; clientSecret: string; redirectUri: string }
   pruneRetention: number
   accountPurgeGrace: number
-  rateLimit: { windowMs: number; max: number }
+  rateLimit: { windowMs: number; max: number; guestMax: number }
   trustProxyHops: number
 }
 
@@ -165,7 +170,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     pruneRetention: e.PRUNE_RETENTION,
     accountPurgeGrace: e.ACCOUNT_PURGE_GRACE,
-    rateLimit: { windowMs: e.RATE_LIMIT_WINDOW_MS, max: e.RATE_LIMIT_MAX },
+    rateLimit: {
+      windowMs: e.RATE_LIMIT_WINDOW_MS,
+      max: e.RATE_LIMIT_MAX,
+      guestMax: e.GUEST_RATE_LIMIT,
+    },
     trustProxyHops: e.TRUST_PROXY,
   }
 }

@@ -108,14 +108,18 @@ const users = new Hono<AppEnv>()
     // is no authenticated user here, so makeRateLimiter falls back to the
     // client address. This is the ONLY bound on guest row creation -- there is
     // no reaper for abandoned guests (design decision: cleanup is rate-limit
-    // only) -- so it gets the same tight credential-endpoint budget as
-    // /oauth/token et al (app.ts, prefix: 'login'), not the lenient global
-    // default, which would barely tighten anything over ordinary traffic.
+    // only) -- so it gets its own budget (GUEST_RATE_LIMIT), tunable
+    // independently of the lenient global default, which would barely
+    // tighten anything over ordinary traffic. Registered BEFORE the
+    // validator, so it must count only successful creations: otherwise a
+    // stream of malformed bodies spends the same budget as real players, and
+    // the budget exists to bound rows, not requests.
     (c, next) =>
       makeRateLimiter(c.var.rateStore, {
         windowMs: c.var.config.rateLimit.windowMs,
-        limit: 10,
+        limit: c.var.config.rateLimit.guestMax,
         prefix: 'guest',
+        countOnly: (status) => status === 201,
       })(c, next),
     validator('json', guestSchema),
     async (c) => {

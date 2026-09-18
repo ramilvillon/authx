@@ -202,6 +202,35 @@ Deno.test('a guest has no email and reports none', async () => {
   assertEquals((await me.json()).email, '')
 })
 
+Deno.test('a malformed guest request does not spend the creation budget', async () => {
+  const ctx = makeTestApp({ GUEST_RATE_LIMIT: '1' })
+  await seedGuestService(ctx, true)
+
+  // The limiter runs before the validator, so without countOnly this garbage
+  // body would spend the one-request budget and lock out the next real
+  // player.
+  const bad = await ctx.app.request('/users/guest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  assertEquals(bad.status, 400)
+
+  const good = await createGuest(ctx.app)
+  assertEquals(
+    good.status,
+    201,
+    'the malformed request must not have spent the budget',
+  )
+})
+
+Deno.test('the guest creation budget still blocks once it is genuinely spent', async () => {
+  const ctx = makeTestApp({ GUEST_RATE_LIMIT: '1' })
+  await seedGuestService(ctx, true)
+  assertEquals((await createGuest(ctx.app)).status, 201)
+  assertEquals((await createGuest(ctx.app)).status, 429)
+})
+
 // Local copy, not imported from social-links.test.ts: importing one Deno test
 // file from another evaluates it and re-registers its Deno.test calls, and
 // this is eight lines -- not worth a cross-file dependency.
