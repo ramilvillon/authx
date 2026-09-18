@@ -20,6 +20,7 @@ import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
 import { verifyChallenge } from '../../lib/pkce.ts'
+import { exchangeGoogleAuthCode } from '../../lib/google.ts'
 
 export type AuthService = ReturnType<typeof createAuthService>
 
@@ -472,6 +473,67 @@ export function createAuthService(deps: {
         access_token,
         token_type: 'Bearer',
         expires_in: config.accessTokenTtl,
+      }
+    },
+    // Binding while authenticated: the bearer token proves which local row to
+    // attach to, rather than inferring it from an email string the way
+    // loginWithGoogle's fallback path does.
+    async linkGoogleToUser(userId: string, code: string): Promise<void> {
+      const google = config.google
+      if (!google.clientId) throw AppError.of('google_login_disabled')
+      const identity = await exchangeGoogleAuthCode(code, {
+        clientId: google.clientId,
+        clientSecret: google.clientSecret,
+        redirectUri: google.redirectUri,
+      })
+      // Never link on an unproven address -- same rule as loginWithGoogle.
+      if (!identity.emailVerified) {
+        throw AppError.of('google_email_unverified')
+      }
+      const user = await userRepo.findById(userId)
+      if (!user) throw AppError.of('user_not_found')
+
+      const existing = await deps.socialRepo.findByProviderAccount(
+        'google',
+        identity.sub,
+      )
+      // A retry of the same bind is a success, not a conflict.
+      if (existing?.userId === userId) return
+      if (existing) throw AppError.of('social_account_already_linked')
+
+      // Only an account with no address takes Google's. A user who already has
+      // one keeps it: without this condition, binding would be a second route
+      // to an unauthorised email change (the F6 shape).
+      const takesEmail = !user.email
+      if (takesEmail && await userRepo.findAnyByEmail(identity.email)) {
+        // findAnyByEmail, not findByEmail: a soft-deleted row still occupies
+        // the address until db:prune erases it.
+        throw AppError.of('email_taken')
+      }
+
+      // link() first: UNIQUE(provider, provider_account_id) is what atomically
+      // claims the Google account against a concurrent bind.
+      await deps.socialRepo.link({
+        id: crypto.randomUUID(),
+        userId,
+        provider: 'google',
+        providerAccountId: identity.sub,
+      })
+      if (takesEmail) {
+        // Through the internal repo patch, never a client-facing schema:
+        // emailVerified is mass-assignment protected (Phase 4).
+        const patched = await userRepo.update(userId, {
+          email: identity.email,
+          emailVerified: true,
+        })
+        if (!patched) {
+          // Lost a race for the address. Undo the claim rather than leaving a
+          // link on a row that did not get the email. The guest has no other
+          // social link, so deleteAllForUser is exactly right and needs no new
+          // repository method.
+          await deps.socialRepo.deleteAllForUser(userId)
+          throw AppError.of('email_taken')
+        }
       }
     },
   }

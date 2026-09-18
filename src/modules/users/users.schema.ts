@@ -39,6 +39,13 @@ export const guestCredentialSchema = z.object({
   password: z.string(),
 })
 
+// z.literal('google'), not z.string() -- an allow-list, so a second provider
+// must be added deliberately rather than falling through.
+export const socialLinkSchema = z.object({
+  provider: z.literal('google'),
+  code: z.string().min(1),
+})
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type UpdateUserInput = z.infer<typeof updateUserSchema>
 export type PublicUser = z.infer<typeof publicUserSchema>

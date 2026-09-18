@@ -9,6 +9,7 @@ import {
   guestSchema,
   publicUserSchema,
   registerSchema,
+  socialLinkSchema,
   updateUserSchema,
 } from './users.schema.ts'
 import { createMiddleware } from 'hono/factory'
@@ -122,6 +123,38 @@ const users = new Hono<AppEnv>()
         c.req.valid('json').client_id,
       )
       return c.json(cred, 201)
+    },
+  )
+  .post(
+    '/me/social-links',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'Link a social account to the authenticated user',
+      description:
+        'Takes a one-time server auth code from a native Google SDK and ' +
+        'attaches that Google account to the caller. An account with no ' +
+        'email address also gains the Google address, verified.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        200: { description: 'Linked (idempotent for the same account)' },
+        400: { description: 'Invalid input, or the code was not redeemable' },
+        401: { description: 'Missing or invalid access token' },
+        403: { description: 'The Google email is not verified' },
+        404: { description: 'Google login is not configured' },
+        409: {
+          description:
+            'That Google account, or its email address, belongs to another user',
+        },
+      },
+    }),
+    requireAuth,
+    validator('json', socialLinkSchema),
+    async (c) => {
+      await c.var.authService.linkGoogleToUser(
+        c.var.user.id,
+        c.req.valid('json').code,
+      )
+      return c.json({ ok: true }, 200)
     },
   )
   .get(

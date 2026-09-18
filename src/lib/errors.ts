@@ -44,6 +44,10 @@ export const ERRORS = {
   org_not_found: { status: 404, message: 'organization not found' },
   service_not_found: { status: 404, message: 'service not found' },
   email_taken: { status: 409, message: 'email already registered' },
+  social_account_already_linked: {
+    status: 409,
+    message: 'that account is already linked to a different user',
+  },
   org_slug_taken: {
     status: 409,
     message: 'an org with this slug already exists',
