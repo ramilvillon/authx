@@ -41,6 +41,10 @@ export function createAdminService(deps: {
       audience: string
       type: 'public' | 'confidential'
       redirectUris: string[]
+      // Optional here (unlike the required zod field, which always supplies a
+      // default) so existing direct callers -- like the drizzle-only e2e test
+      // that predates this field -- keep compiling.
+      guests_enabled?: boolean
     }) {
       if (!(await orgRepo.findOrgById(orgId))) {
         throw AppError.of('org_not_found')
@@ -66,6 +70,7 @@ export function createAdminService(deps: {
         audience: input.audience,
         type: input.type,
         redirectUris: input.redirectUris,
+        guestsEnabled: input.guests_enabled ?? false,
         createdAt: new Date(),
       })
       return { service, clientSecret }

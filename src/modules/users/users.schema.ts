@@ -32,6 +32,13 @@ export const publicUserSchema = z.object({
   createdAt: z.date(),
 })
 
+export const guestSchema = z.object({ client_id: z.string().min(1) })
+
+export const guestCredentialSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+})
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type UpdateUserInput = z.infer<typeof updateUserSchema>
 export type PublicUser = z.infer<typeof publicUserSchema>

@@ -11,6 +11,7 @@ export const registerServiceSchema = z.object({
   audience: z.string().min(1).max(128),
   type: z.enum(['public', 'confidential']),
   redirectUris: z.array(z.string().url()).default([]),
+  guests_enabled: z.boolean().default(false),
 })
 
 export const addMemberSchema = z.object({ userId: z.string().min(1) })

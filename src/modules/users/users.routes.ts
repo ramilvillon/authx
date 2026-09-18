@@ -5,6 +5,8 @@ import { resolver, validator } from 'hono-openapi/zod'
 import type { OpenAPIV3 } from 'openapi-types'
 import type { AppEnv } from '../../deps.ts'
 import {
+  guestCredentialSchema,
+  guestSchema,
   publicUserSchema,
   registerSchema,
   updateUserSchema,
@@ -79,6 +81,45 @@ const users = new Hono<AppEnv>()
         }
       }
       return c.json(user, 201)
+    },
+  )
+  .post(
+    '/guest',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'Create a guest account',
+      description:
+        'Creates an account with a generated username and password and no ' +
+        "email address, and makes it a member of the client service's org. " +
+        'The credentials are returned once and are not retrievable again; ' +
+        'the client stores them and re-authenticates with grant_type=password.',
+      responses: {
+        201: {
+          description: 'Created',
+          content: json(resolver(guestCredentialSchema)),
+        },
+        400: { description: 'Invalid input' },
+        404: { description: 'Guest accounts are not enabled for this client' },
+        429: { description: 'Too many guest accounts from this address' },
+      },
+    }),
+    // Unauthenticated and it creates a row, so it needs its own bucket. There
+    // is no authenticated user here, so makeRateLimiter falls back to the
+    // client address.
+    // Brief's illustration named this field `limit`; the real config field is
+    // `max` (see app.ts / config.ts), so that's what's read here.
+    (c, next) =>
+      makeRateLimiter(c.var.rateStore, {
+        windowMs: c.var.config.rateLimit.windowMs,
+        limit: c.var.config.rateLimit.max,
+        prefix: 'guest',
+      })(c, next),
+    validator('json', guestSchema),
+    async (c) => {
+      const cred = await c.var.userService.createGuest(
+        c.req.valid('json').client_id,
+      )
+      return c.json(cred, 201)
     },
   )
   .get(

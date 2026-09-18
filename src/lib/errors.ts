@@ -75,6 +75,12 @@ export const ERRORS = {
     status: 404,
     message: 'google login is not configured',
   },
+  // 404, matching google_login_disabled: a capability the deployment has not
+  // enabled should not be distinguishable from one that does not exist.
+  guest_accounts_disabled: {
+    status: 404,
+    message: 'guest accounts are not enabled for this client',
+  },
   authorize_request_expired: {
     status: 400,
     message:

@@ -85,6 +85,13 @@
       "when": 1789699568123,
       "tag": "0011_guest_username_and_nullable_email",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1789701109150,
+      "tag": "0012_app_services_guests_enabled",
+      "breakpoints": true
     }
   ]
 }

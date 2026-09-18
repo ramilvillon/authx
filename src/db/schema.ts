@@ -103,6 +103,9 @@ export const appServices = mysqlTable('app_services', {
   audience: varchar('audience', { length: 128 }).notNull().unique(),
   type: varchar('type', { length: 16 }).notNull(), // 'public' | 'confidential'
   redirectUris: text('redirect_uris').notNull().default('[]'), // JSON array
+  // Opt-in per service: a service does not silently start minting guest
+  // accounts because the column was added.
+  guestsEnabled: boolean('guests_enabled').notNull().default(false),
   createdAt: datetime('created_at').notNull(),
 }, (t) => ({ orgIdx: index('app_services_org_idx').on(t.orgId) }))
 

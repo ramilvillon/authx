@@ -1,0 +1,1 @@
+ALTER TABLE `app_services` ADD `guests_enabled` boolean DEFAULT false NOT NULL;

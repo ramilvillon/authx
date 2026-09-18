@@ -11,6 +11,7 @@ import type { OrgRepository } from '../orgs/orgs.repository.ts'
 import type { VerificationTokenRepository } from '../verification/verification.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
+import { generateRefreshToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
 
 export type UserService = ReturnType<typeof createUserService>
@@ -64,6 +65,46 @@ export function createUserService(deps: {
       // drizzle assignRole throw 'role user not seeded' on every registration
       // against a real database.
       return toPublic(user)
+    },
+    // The player never types these: the client stores both and re-authenticates
+    // with grant_type=password on every launch.
+    async createGuest(
+      clientId: string,
+    ): Promise<{ username: string; password: string }> {
+      const service = await orgRepo.findServiceByClientId(clientId)
+      // Same 404 for "no such client" and "not opted in" -- neither should be
+      // probeable.
+      if (!service || service.guestsEnabled !== true) {
+        throw AppError.of('guest_accounts_disabled')
+      }
+      // generateRefreshToken is not refresh-specific: 32 random bytes, hex
+      // encoded. Reused rather than copied so there is one entropy decision.
+      const username = `guest_${generateRefreshToken().slice(0, 16)}`
+      const password = generateRefreshToken()
+      const now = new Date()
+      const user = await repo.create({
+        id: crypto.randomUUID(),
+        email: null,
+        username,
+        passwordHash: await hashPassword(password),
+        createdAt: now,
+        updatedAt: now,
+      })
+      // Not optional: issueTokensForService refuses a non-member, so without
+      // this the credential we just handed out could never obtain a token.
+      // register() gets away with granting none because a registered user
+      // waits for an admin; a guest has no admin step. addMember is
+      // idempotent (onDuplicateKeyUpdate), so a retry is safe.
+      await orgRepo.addMember({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        orgId: service.orgId,
+        createdAt: now,
+      })
+      // No role. Roles are per-service and granted through the management API,
+      // the same reason loginWithGoogle assigns none. The token carries an
+      // empty scope, which requireAuth accepts.
+      return { username, password }
     },
     async getById(id: string): Promise<PublicUser> {
       const u = await repo.findById(id)

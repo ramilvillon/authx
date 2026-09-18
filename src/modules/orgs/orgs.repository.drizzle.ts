@@ -8,6 +8,7 @@ function toService(row: typeof appServices.$inferSelect): AppServiceRecord {
     ...row,
     type: row.type as 'public' | 'confidential',
     redirectUris: JSON.parse(row.redirectUris) as string[],
+    guestsEnabled: row.guestsEnabled,
   }
 }
 
@@ -36,6 +37,7 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
       await db.insert(appServices).values({
         ...s,
         redirectUris: JSON.stringify(s.redirectUris),
+        guestsEnabled: s.guestsEnabled ?? false,
       })
       return s
     },
