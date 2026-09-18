@@ -8,7 +8,6 @@ function toService(row: typeof appServices.$inferSelect): AppServiceRecord {
     ...row,
     type: row.type as 'public' | 'confidential',
     redirectUris: JSON.parse(row.redirectUris) as string[],
-    guestsEnabled: row.guestsEnabled,
   }
 }
 
