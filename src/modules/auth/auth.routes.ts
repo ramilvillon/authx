@@ -17,6 +17,13 @@ import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { Context } from 'hono'
 import type { z } from 'zod'
 
+// Allow-list, not a fall-through arm: the last ternary used to catch everything
+// that was not one of the first three, so a grant type added to the schema would
+// have been dispatched as client_credentials. `never` makes that a compile error.
+function unsupportedGrant(_: never): never {
+  throw AppError.of('invalid_grant')
+}
+
 const json = (schema: ReturnType<typeof resolver>) => ({
   'application/json': { schema },
 })
@@ -158,11 +165,13 @@ const auth = new Hono<AppEnv>()
           clientId: body.client_id,
           clientSecret: body.client_secret,
         })
-        : await svc.clientCredentialsGrant(
+        : body.grant_type === 'client_credentials'
+        ? await svc.clientCredentialsGrant(
           body.client_id,
           body.client_secret,
           body.audience,
         )
+        : unsupportedGrant(body)
       return c.json(pair, 200)
     },
   )
