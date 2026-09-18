@@ -522,15 +522,33 @@ export function createAuthService(deps: {
       if (takesEmail) {
         // Through the internal repo patch, never a client-facing schema:
         // emailVerified is mass-assignment protected (Phase 4).
-        const patched = await userRepo.update(userId, {
-          email: identity.email,
-          emailVerified: true,
-        })
+        //
+        // The link must never survive a failed patch, and "failed" has two
+        // shapes here. users.repository.drizzle.ts's update() throws straight
+        // out of a duplicate-key insert rather than returning null -- it never
+        // reaches its own `return findById(id)` -- so a lost race on the
+        // address surfaces as an exception, not a falsy return. Catch it,
+        // compensate, and rethrow the original error rather than relabelling
+        // it email_taken: we have no driver-independent way here to tell a
+        // duplicate-key race (the likely cause, given the findAnyByEmail
+        // pre-check just above) apart from an unrelated failure such as a DB
+        // outage, and reporting an outage as email_taken would send the
+        // client down the wrong path.
+        let patched
+        try {
+          patched = await userRepo.update(userId, {
+            email: identity.email,
+            emailVerified: true,
+          })
+        } catch (err) {
+          await deps.socialRepo.deleteAllForUser(userId)
+          throw err
+        }
         if (!patched) {
-          // Lost a race for the address. Undo the claim rather than leaving a
-          // link on a row that did not get the email. The guest has no other
-          // social link, so deleteAllForUser is exactly right and needs no new
-          // repository method.
+          // The clean (non-throwing) way to lose the row: it vanished --
+          // e.g. soft-deleted -- between findById above and this update, so
+          // update() matched nothing rather than hitting a constraint. Same
+          // compensation.
           await deps.socialRepo.deleteAllForUser(userId)
           throw AppError.of('email_taken')
         }

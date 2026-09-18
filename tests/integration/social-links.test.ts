@@ -251,3 +251,41 @@ Deno.test('a user who already has an email keeps it -- binding is not an email c
     'binding must not become a backdoor email change -- that is the F6 shape',
   )
 })
+
+Deno.test('a failed email patch does not leave a dangling social link', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const { accessToken } = await guestWithToken(ctx)
+
+  // Simulates the real failure mode: users.repository.drizzle.ts's update()
+  // throws straight out of a duplicate-key insert instead of returning null
+  // (it never reaches its own `return findById(id)`), for ANY failure of the
+  // write -- a race on the address is the likely real-world cause, but the
+  // invariant under test (the link must never survive a failed patch) does
+  // not depend on which. The repo double is a plain object, so overriding one
+  // method in place is enough; no new fake type is needed.
+  const realUpdate = ctx.userRepo.update.bind(ctx.userRepo)
+  ctx.userRepo.update = () => Promise.reject(new Error('simulated db failure'))
+
+  const google = stubGoogleToken({
+    sub: 'g-800',
+    email: 'race@example.test',
+    email_verified: true,
+  })
+  let res: Response
+  try {
+    res = await bind(ctx, accessToken)
+  } finally {
+    google.restore()
+    ctx.userRepo.update = realUpdate
+  }
+
+  // The write failed, so the caller must see a failure -- not a silent 200
+  // that quietly dropped the email (app.onError maps an unrecognised
+  // exception to a generic 500, never a fabricated email_taken).
+  assertEquals(res.status, 500)
+  assertEquals(
+    await ctx.socialRepo.findByProviderAccount('google', 'g-800'),
+    null,
+    'a failed email patch must not leave a dangling social link',
+  )
+})
