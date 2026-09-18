@@ -10,6 +10,11 @@ Deno.test('loginWithGoogle new user: creates a passwordless user, links the acco
   })
   const user = await userRepo.findByEmail('g@b.com')
   assertEquals(user?.passwordHash, null)
+  // Google only reaches this branch with verified_email true (the check above
+  // refuses otherwise), so the address is already proven: recording it as
+  // unverified would ask the person to verify what they just proved, and would
+  // put email_verified: false in the id_token of a Google-verified account.
+  assertEquals(user?.emailVerified, true)
   assertEquals(login.userId, user?.id)
   assertEquals(
     (await socialRepo.findByProviderAccount('google', 'g-123'))?.userId,

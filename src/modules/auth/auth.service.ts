@@ -247,6 +247,11 @@ export function createAuthService(deps: {
           id: crypto.randomUUID(),
           email: profile.email,
           passwordHash: null,
+          // Only reachable with profile.emailVerified (checked above), so the
+          // address is already proven -- verifying it again by email would ask
+          // for what Google just established, and leaving it false would put
+          // email_verified: false in this account's id_token.
+          emailVerified: true,
           createdAt: now,
           updatedAt: now,
         })
