@@ -11,7 +11,16 @@ import {
 
 export const users = mysqlTable('users', {
   id: varchar('id', { length: 36 }).primaryKey(),
-  email: varchar('email', { length: 255 }).notNull().unique(),
+  // Nullable since guest accounts: an account is identified by an email OR a
+  // username. MySQL permits many NULLs under a UNIQUE index, so both
+  // populations coexist. ponytail: the "at least one of the two" rule is an
+  // app-level invariant, not a CHECK constraint -- add one if a second writer
+  // of user rows ever appears.
+  email: varchar('email', { length: 255 }).unique(),
+  // Generated, never chosen by a player. Generated values never contain '@',
+  // which is what keeps the credential lookup's `@` test unambiguous. If
+  // players are ever allowed to pick a username, that becomes real validation.
+  username: varchar('username', { length: 64 }).unique(),
   passwordHash: varchar('password_hash', { length: 255 }),
   emailVerified: boolean('email_verified').notNull().default(false),
   name: varchar('name', { length: 255 }),
