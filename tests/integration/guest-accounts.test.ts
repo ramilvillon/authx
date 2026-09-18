@@ -199,7 +199,11 @@ Deno.test('a guest has no email and reports none', async () => {
     headers: { authorization: `Bearer ${pair.access_token}` },
   })
   assertEquals(me.status, 200)
-  assertEquals((await me.json()).email, '')
+  // /users/me is documented as publicUserSchema and must actually be one: a
+  // guest has no address (null, not ''), and its generated username is there.
+  const body = await me.json()
+  assertEquals(body.email, null)
+  assertEquals(body.username, cred.username)
 })
 
 Deno.test('a malformed guest request does not spend the creation budget', async () => {

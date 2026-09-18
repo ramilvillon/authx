@@ -142,6 +142,28 @@ Deno.test('a service token authenticates without a user row', async () => {
   )
 })
 
+// ...but it names no user row, so the one route that answers "who am I" has
+// nothing to answer with. It must say so rather than invent a blank user.
+Deno.test('a service token gets 404 from /users/me', async () => {
+  const { app } = makeTestApp()
+  const Authorization = `Bearer ${await signAccessToken({
+    sub: 'some-app-service-id',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: 'platform',
+    org: 'platform',
+    scope: 'users:list',
+    clientId: 'cid_m2m',
+    subType: 'service',
+  })}`
+  assertEquals(
+    (await app.request('/users/me', { headers: { Authorization } })).status,
+    404,
+  )
+})
+
 Deno.test('/users/me without token -> 401', async () => {
   const { app } = makeTestApp()
   const res = await app.request('/users/me')

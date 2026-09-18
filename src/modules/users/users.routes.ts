@@ -173,10 +173,14 @@ const users = new Hono<AppEnv>()
           content: json(resolver(publicUserSchema)),
         },
         401: { description: 'Missing or invalid access token' },
+        404: { description: 'The token names no user (a service token)' },
       },
     }),
     requireAuth,
-    (c) => c.json(c.var.user, 200),
+    // c.var.user is the auth context (scope, org, aud), not a PublicUser --
+    // read the row so this route returns what it documents. A service token
+    // names no user row and gets 404 here.
+    async (c) => c.json(await c.var.userService.getById(c.var.user.id), 200),
   )
   .get(
     '/',
