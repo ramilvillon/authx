@@ -287,7 +287,9 @@ Clicking the link sets `email_verified: true`, which is surfaced in the OIDC
 id_token and UserInfo endpoint. The resend endpoint
 (`POST /verify-email/resend`) is anti-enumeration — it always returns 204
 regardless of whether the address exists or is already verified. Changing a
-user's email resets `email_verified` to false. Verification is non-blocking: it
+user's email resets `email_verified` to false. An account created by Google
+login starts verified: that path refuses an unverified Google email, so the
+address is already proven and no link is sent. Verification is non-blocking: it
 does not gate login.
 
 ### Key rotation
