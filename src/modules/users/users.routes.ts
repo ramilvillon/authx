@@ -105,13 +105,15 @@ const users = new Hono<AppEnv>()
     }),
     // Unauthenticated and it creates a row, so it needs its own bucket. There
     // is no authenticated user here, so makeRateLimiter falls back to the
-    // client address.
-    // Brief's illustration named this field `limit`; the real config field is
-    // `max` (see app.ts / config.ts), so that's what's read here.
+    // client address. This is the ONLY bound on guest row creation -- there is
+    // no reaper for abandoned guests (design decision: cleanup is rate-limit
+    // only) -- so it gets the same tight credential-endpoint budget as
+    // /oauth/token et al (app.ts, prefix: 'login'), not the lenient global
+    // default, which would barely tighten anything over ordinary traffic.
     (c, next) =>
       makeRateLimiter(c.var.rateStore, {
         windowMs: c.var.config.rateLimit.windowMs,
-        limit: c.var.config.rateLimit.max,
+        limit: 10,
         prefix: 'guest',
       })(c, next),
     validator('json', guestSchema),
