@@ -124,13 +124,19 @@ export function createAuthService(deps: {
 
   return {
     async passwordGrant(
-      email: string,
+      identifier: string,
       password: string,
       audience: string,
     ): Promise<TokenPair> {
-      const user = await userRepo.findByEmail(email)
+      // An email or a generated username. Generated usernames never contain
+      // '@', so the test is unambiguous in both directions.
+      const user = identifier.includes('@')
+        ? await userRepo.findByEmail(identifier)
+        : await userRepo.findByUsername(identifier)
       // Always run a bcrypt comparison to keep timing constant across the
-      // missing-user, passwordless-user, and wrong-password branches.
+      // missing-user, passwordless-user, and wrong-password branches -- on
+      // BOTH lookup paths, which is why the lookup is the only thing that
+      // branches.
       const hash = user?.passwordHash ?? await getDummyHash()
       const passwordOk = await verifyPassword(password, hash)
       if (!user || !user.passwordHash || !passwordOk) {
