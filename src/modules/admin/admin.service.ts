@@ -1,4 +1,7 @@
-import type { OrgRepository } from '../orgs/orgs.repository.ts'
+import type {
+  AppServiceUpdate,
+  OrgRepository,
+} from '../orgs/orgs.repository.ts'
 import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
@@ -44,7 +47,7 @@ export function createAdminService(deps: {
       // Optional here (unlike the required zod field, which always supplies a
       // default) so existing direct callers -- like the drizzle-only e2e test
       // that predates this field -- keep compiling.
-      guests_enabled?: boolean
+      guestsEnabled?: boolean
     }) {
       if (!(await orgRepo.findOrgById(orgId))) {
         throw AppError.of('org_not_found')
@@ -70,12 +73,17 @@ export function createAdminService(deps: {
         audience: input.audience,
         type: input.type,
         redirectUris: input.redirectUris,
-        guestsEnabled: input.guests_enabled ?? false,
+        guestsEnabled: input.guestsEnabled ?? false,
         createdAt: new Date(),
       })
       return { service, clientSecret }
     },
     listServices: (orgId: string) => orgRepo.listServicesByOrg(orgId),
+    async updateService(id: string, patch: AppServiceUpdate) {
+      const service = await orgRepo.updateService(id, patch)
+      if (!service) throw AppError.of('service_not_found')
+      return service
+    },
     async addMember(orgId: string, userId: string) {
       if (!(await orgRepo.findOrgById(orgId))) {
         throw AppError.of('org_not_found')

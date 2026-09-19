@@ -158,7 +158,8 @@ the route returns 404.
 
 ### Guest accounts
 
-A service opts in with `guests_enabled` (set via `POST /orgs/:id/services`).
+A service opts in with `guestsEnabled`, set at `POST /orgs/:id/services` or
+afterwards with `PATCH /services/:id` (`{ "guestsEnabled": true }`).
 `POST /users/guest` then takes `{ "client_id": "<cid>" }`, unauthenticated, and
 creates an account with a generated username and password and no email,
 returning `{ username, password }` **once** — they are not retrievable again, so
@@ -198,7 +199,7 @@ surface:
 | -------- | ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/health`                           | —                                  | Liveness check                                                                                                                               |
 | `POST`   | `/users`                            | —                                  | Register a user (no roles; roles are per-service, granted via the management API)                                                            |
-| `POST`   | `/users/guest`                      | —                                  | Create a guest account for a `client_id` with `guests_enabled`; returns a one-time username + password                                       |
+| `POST`   | `/users/guest`                      | —                                  | Create a guest account for a `client_id` with `guestsEnabled`; returns a one-time username + password                                        |
 | `POST`   | `/users/me/social-links`            | Bearer                             | Bind a Google account via a native-SDK server auth code                                                                                      |
 | `GET`    | `/users/me`                         | Bearer                             | Current authenticated user                                                                                                                   |
 | `GET`    | `/users`                            | Bearer + `users:list`              | List users                                                                                                                                   |
@@ -235,20 +236,21 @@ own record (self) works with a token for any audience.
 These routes require a Bearer token minted for the reserved `platform` audience
 (`requireAuth` + `requirePlatform`) plus the listed permission.
 
-| Method   | Path                        | Permission       | Description                              |
-| -------- | --------------------------- | ---------------- | ---------------------------------------- |
-| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization                   |
-| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                       |
-| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                      |
-| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret)     |
-| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services                   |
-| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                             |
-| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                          |
-| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service              |
-| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service        |
-| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role             |
-| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user                  |
-| `POST`   | `/clients/:clientId/roles`  | `rbac:write`     | Grant a role to a client (M2M principal) |
+| Method   | Path                        | Permission       | Description                                                  |
+| -------- | --------------------------- | ---------------- | ------------------------------------------------------------ |
+| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization                                       |
+| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                                           |
+| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                                          |
+| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret)                         |
+| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services                                       |
+| `PATCH`  | `/services/:id`             | `services:write` | Update a service's `name`, `redirectUris` or `guestsEnabled` |
+| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                                                 |
+| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                                              |
+| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service                                  |
+| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service                            |
+| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role                                 |
+| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user                                      |
+| `POST`   | `/clients/:clientId/roles`  | `rbac:write`     | Grant a role to a client (M2M principal)                     |
 
 Setting `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` before
 `deno task

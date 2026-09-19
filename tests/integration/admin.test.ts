@@ -237,3 +237,124 @@ Deno.test('end-to-end: grant a role and see it in the token scope', async () => 
   const { payload } = decode(Authorization.slice('Bearer '.length))
   assertEquals(payload.scope, 'billing:read')
 })
+
+// --- PATCH /services/:id -------------------------------------------------
+// guests_enabled used to be write-once at registration, so turning guests on
+// for a service that already existed meant hand-written SQL.
+
+const patch = (token: string, body: unknown) => ({
+  ...json(token, body),
+  method: 'PATCH',
+})
+
+async function seedService(
+  ctx: ReturnType<typeof makeTestApp>,
+  token: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const org = await (await ctx.app.request(
+    '/orgs',
+    json(token, { slug: 'game', name: 'Game' }),
+  )).json()
+  const { service } = await (await ctx.app.request(
+    `/orgs/${org.id}/services`,
+    json(token, {
+      slug: 'game',
+      name: 'Game',
+      audience: 'game-app',
+      type: 'public',
+      redirectUris: ['https://game.test/cb'],
+      ...overrides,
+    }),
+  )).json()
+  return { org, service }
+}
+
+const createGuest = (
+  ctx: ReturnType<typeof makeTestApp>,
+  clientId: string,
+) =>
+  ctx.app.request('/users/guest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId }),
+  })
+
+Deno.test('guests can be turned on for a service that already exists', async () => {
+  const ctx = makeTestApp()
+  const token = await seedPlatformAdmin(ctx.userRepo)
+  const { service } = await seedService(ctx, token)
+
+  // Registered without guests: the client is not even distinguishable from
+  // one that does not exist (404, deliberately).
+  assertEquals((await createGuest(ctx, service.clientId)).status, 404)
+
+  const res = await ctx.app.request(
+    `/services/${service.id}`,
+    patch(token, { guestsEnabled: true }),
+  )
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).guestsEnabled, true)
+
+  // The whole point: no restart, no re-registration, no SQL.
+  assertEquals((await createGuest(ctx, service.clientId)).status, 201)
+})
+
+Deno.test('a service can be registered with guests already on', async () => {
+  const ctx = makeTestApp()
+  const token = await seedPlatformAdmin(ctx.userRepo)
+  const { service } = await seedService(ctx, token, { guestsEnabled: true })
+  assertEquals((await createGuest(ctx, service.clientId)).status, 201)
+})
+
+Deno.test('a patch changes what it may and leaves the identity alone', async () => {
+  const ctx = makeTestApp()
+  const token = await seedPlatformAdmin(ctx.userRepo)
+  const { service } = await seedService(ctx, token)
+
+  const res = await ctx.app.request(
+    `/services/${service.id}`,
+    patch(token, {
+      name: 'Game (EU)',
+      redirectUris: ['https://game.test/cb', 'https://eu.game.test/cb'],
+      // A service's audience is its token `aud` claim and its client id is its
+      // credential: changing either under a running fleet is a different,
+      // deliberate operation, so this endpoint ignores them.
+      audience: 'someone-elses-app',
+      type: 'confidential',
+      clientId: 'cid_attacker',
+    }),
+  )
+  assertEquals(res.status, 200)
+  const after = await res.json()
+  assertEquals(after.name, 'Game (EU)')
+  assertEquals(after.redirectUris.length, 2)
+  assertEquals(after.audience, 'game-app')
+  assertEquals(after.type, 'public')
+  assertEquals(after.clientId, service.clientId)
+})
+
+Deno.test('patching a service needs services:write, and a real service', async () => {
+  const ctx = makeTestApp()
+  const admin = await seedPlatformAdmin(ctx.userRepo)
+  const { service } = await seedService(ctx, admin)
+
+  const weak = await seedPlatformAdmin(
+    ctx.userRepo,
+    PLATFORM_PERMISSIONS.filter((p) => p !== 'services:write'),
+  )
+  assertEquals(
+    (await ctx.app.request(
+      `/services/${service.id}`,
+      patch(weak, { guestsEnabled: true }),
+    )).status,
+    403,
+  )
+  assertEquals(
+    (await ctx.app.request(
+      '/services/no-such-service',
+      patch(admin, { guestsEnabled: true }),
+    )).status,
+    404,
+  )
+})

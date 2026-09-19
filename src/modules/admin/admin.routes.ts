@@ -14,6 +14,7 @@ import {
   createRoleSchema,
   grantPermissionSchema,
   registerServiceSchema,
+  updateServiceSchema,
 } from './admin.schema.ts'
 
 // The management API is reserved for tokens minted for the platform service.
@@ -83,6 +84,20 @@ const admin = new Hono<AppEnv>()
     async (c) => {
       return c.json(await c.var.adminService.listServices(c.req.param('id')))
     },
+  )
+  .patch(
+    '/services/:id',
+    requireAuth,
+    requirePlatform,
+    requirePermission('services:write'),
+    validator('json', updateServiceSchema),
+    async (c) =>
+      c.json(
+        await c.var.adminService.updateService(
+          c.req.param('id'),
+          c.req.valid('json'),
+        ),
+      ),
   )
   .post(
     '/orgs/:id/members',

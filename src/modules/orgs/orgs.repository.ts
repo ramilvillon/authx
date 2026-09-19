@@ -21,6 +21,13 @@ export type AppServiceRecord = {
   createdAt: Date
 }
 
+// Only the fields a live service can safely change. `audience` is the `aud`
+// claim every issued token carries and `clientId` is its credential, so moving
+// either is a deliberate migration, not a patch.
+export type AppServiceUpdate = Partial<
+  Pick<AppServiceRecord, 'name' | 'redirectUris' | 'guestsEnabled'>
+>
+
 export type MembershipRecord = {
   id: string
   userId: string
@@ -40,6 +47,11 @@ export type OrgRepository = {
   findServiceByAudience(audience: string): Promise<AppServiceRecord | null>
   findServiceByClientId(clientId: string): Promise<AppServiceRecord | null>
   listServicesByOrg(orgId: string): Promise<AppServiceRecord[]>
+  // null when there is no such service, so callers need no second lookup.
+  updateService(
+    id: string,
+    patch: AppServiceUpdate,
+  ): Promise<AppServiceRecord | null>
   addMember(m: MembershipRecord): Promise<void>
   removeMember(userId: string, orgId: string): Promise<void>
   // memberships has no foreign key to users, so a deleted account's org
@@ -49,6 +61,11 @@ export type OrgRepository = {
 }
 
 // In-memory test double. Mirror behavior in orgs.repository.drizzle.ts.
+const defined = <T extends object>(o: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(o).filter(([, v]) => v !== undefined),
+  ) as Partial<T>
+
 export function createInMemoryOrgRepository(): OrgRepository {
   const orgs = new Map<string, OrgRecord>()
   const services = new Map<string, AppServiceRecord>()
@@ -89,6 +106,15 @@ export function createInMemoryOrgRepository(): OrgRepository {
         if (s.clientId === clientId) return Promise.resolve({ ...s })
       }
       return Promise.resolve(null)
+    },
+    updateService(id, patch) {
+      const s = services.get(id)
+      if (!s) return Promise.resolve(null)
+      // drizzle's .set() skips undefined values; strip them here too or the
+      // fake would null out a field the real repository would leave alone.
+      const next = { ...s, ...defined(patch) }
+      services.set(id, next)
+      return Promise.resolve({ ...next })
     },
     listServicesByOrg(orgId) {
       return Promise.resolve(
