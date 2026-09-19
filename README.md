@@ -231,6 +231,34 @@ count only on a token minted for the reserved `platform` audience — the same k
 granted inside a tenant service authorizes nothing on `/users`. Acting on your
 own record (self) works with a token for any audience.
 
+### The user representation
+
+`GET /users`, `GET /users/:id`, `GET /users/me`, `POST /users` and
+`PATCH /users/:id` all return the same shape:
+
+```jsonc
+{
+  "id": "...",
+  "email": "a@b.com", /* or null */
+  "username": null, /* or "..." */
+  "createdAt": "..."
+}
+```
+
+Two fields changed with guest accounts, and a client parsing this strictly
+should note both: **`email` is nullable** (a guest has no address until it binds
+one) and **`username` was added** (null for a registered user, set for a guest).
+Nothing consumed the response before guests shipped, so no version of this
+document ever described a non-nullable `email` — it is recorded here so the
+change is not rediscovered as a bug.
+
+Guest usernames are deliberately included on the operator-facing listings. They
+are not a credential (the password is), and the routes already restrict who can
+see them: `users:list` and `users:read:any` count only on the reserved
+`platform` audience, so a tenant token reaches nothing but its own row. Removing
+the field would leave an operator looking at a bare id with a null email and no
+way to tell which account it is.
+
 ### Management API
 
 These routes require a Bearer token minted for the reserved `platform` audience
