@@ -11,7 +11,15 @@ export const registerServiceSchema = z.object({
   audience: z.string().min(1).max(128),
   type: z.enum(['public', 'confidential']),
   redirectUris: z.array(z.string().url()).default([]),
-  guests_enabled: z.boolean().default(false),
+  guestsEnabled: z.boolean().default(false),
+})
+
+// Registration fields that are safe to change afterwards. Absent means
+// "leave it": this is a patch, not a replacement.
+export const updateServiceSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  redirectUris: z.array(z.string().url()).optional(),
+  guestsEnabled: z.boolean().optional(),
 })
 
 export const addMemberSchema = z.object({ userId: z.string().min(1) })

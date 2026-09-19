@@ -274,13 +274,18 @@ export async function seedPlatformAdmin(
   permissions: string[] = PLATFORM_PERMISSIONS,
 ): Promise<string> {
   const now = new Date()
-  await userRepo.create({
-    id: 'admin-user',
-    email: 'platform-admin@test.local',
-    passwordHash: null,
-    createdAt: now,
-    updatedAt: now,
-  })
+  // Idempotent on purpose: a test that needs both a full admin and a narrowed
+  // one calls this twice, and the two share the single fixed-id user row. The
+  // in-memory Map would silently overwrite it; MySQL rejects the duplicate key.
+  if (!(await userRepo.findById('admin-user'))) {
+    await userRepo.create({
+      id: 'admin-user',
+      email: 'platform-admin@test.local',
+      passwordHash: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
   return signAccessToken({
     sub: 'admin-user',
     issuer: 'http://test.local',

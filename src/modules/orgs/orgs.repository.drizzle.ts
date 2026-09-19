@@ -52,6 +52,20 @@ export function createDrizzleOrgRepository(db: Database): OrgRepository {
       })
       return row ? toService(row) : null
     },
+    async updateService(id, patch) {
+      const { redirectUris, ...rest } = patch
+      const values = redirectUris
+        ? { ...rest, redirectUris: JSON.stringify(redirectUris) }
+        : rest
+      // An empty patch has nothing to write, and drizzle rejects an empty SET.
+      if (Object.keys(values).length > 0) {
+        await db.update(appServices).set(values).where(eq(appServices.id, id))
+      }
+      const row = await db.query.appServices.findFirst({
+        where: eq(appServices.id, id),
+      })
+      return row ? toService(row) : null
+    },
     async findServiceByClientId(clientId) {
       const row = await db.query.appServices.findFirst({
         where: eq(appServices.clientId, clientId),
