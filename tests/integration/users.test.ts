@@ -82,3 +82,22 @@ Deno.test('the password grant accepts a case-differing address', async () => {
   })
   assertEquals(res.status, 200)
 })
+
+// utf8mb4_0900_ai_ci compares at primary strength, so it folds accents as well
+// as case and 'cafe@b.com' and 'café@b.com' would be one address to the UNIQUE
+// index. That never arises, because zod's .email() is ASCII-only and rejects
+// the address before any repository sees it. Pinned here so the next person
+// checking whether the accent case is handled finds the answer -- it is
+// excluded at the trust boundary, not handled downstream. Loosening .email()
+// to allow an internationalised address would make the folding reachable.
+Deno.test('POST /users rejects a non-ASCII address at the schema', async () => {
+  const { app } = makeTestApp()
+  for (const email of ['café@b.com', 'ısmail@b.com', 'user@bü.com']) {
+    const res = await app.request('/users', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'pw123456' }),
+    })
+    assertEquals(res.status, 400, `${email} should be refused as invalid`)
+  }
+})

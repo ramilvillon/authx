@@ -198,3 +198,37 @@ Deno.test('a slug, audience, role name or permission key differing only in case 
   assertEquals(perm.status, 409)
   assertEquals((await perm.json()).error.code, 'permission_key_taken')
 })
+
+// The admin schemas are plain z.string(), so unlike an email these columns do
+// admit non-ASCII -- and the collation folds at primary strength, not just
+// case. 'café' and 'cafe' are one slug to the UNIQUE index. This is the only
+// place the accent half of ai_ci is reachable through the API.
+Deno.test('a slug or audience differing only by an accent is still taken', async () => {
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
+
+  assertEquals(
+    (await app.request('/orgs', post(token, { slug: 'café', name: 'Cafe' })))
+      .status,
+    201,
+  )
+  const plain = await app.request(
+    '/orgs',
+    post(token, { slug: 'cafe', name: 'Cafe' }),
+  )
+  assertEquals(plain.status, 409)
+  assertEquals((await plain.json()).error.code, 'org_slug_taken')
+
+  // ... and the folding is not a blanket "strip anything unusual": a dotless
+  // i is its own letter, so these are two different slugs.
+  assertEquals(
+    (await app.request('/orgs', post(token, { slug: 'ismail', name: 'I' })))
+      .status,
+    201,
+  )
+  assertEquals(
+    (await app.request('/orgs', post(token, { slug: 'ısmail', name: 'I' })))
+      .status,
+    201,
+  )
+})
