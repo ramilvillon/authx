@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from '@std/assert'
+import { ciEquals } from '../../src/lib/inmemory.ts'
 import { createInMemoryOrgRepository } from '../../src/modules/orgs/orgs.repository.ts'
 import { createInMemoryRbacRepository } from '../../src/modules/rbac/rbac.repository.ts'
 import { createInMemoryRefreshTokenRepository } from '../../src/modules/auth/token.repository.ts'
@@ -215,4 +216,74 @@ Deno.test('in-memory social repo refuses a second link of one provider account',
     (await repo.findByProviderAccount('google', 'sub-123'))?.userId,
     'u1',
   )
+})
+
+// Ground truth: each pair was run through MySQL as
+//   SELECT (_utf8mb4'<a>' COLLATE utf8mb4_0900_ai_ci)
+//        = (_utf8mb4'<b>' COLLATE utf8mb4_0900_ai_ci)
+// against the same 8.x server the suite uses. ciEquals has to give the same
+// answer, or the doubles disagree with the database about which rows exist.
+//
+// The EQ half is what a lowercase comparison gets wrong: primary strength
+// folds accents, ligatures, full-width forms and kana, not just case. The NE
+// half is the part that is easy to over-fold -- a dotless i is its own letter,
+// and these collations are NO PAD, so a trailing space is significant.
+const COLLATES_EQUAL: [string, string][] = [
+  ['cafe', 'café'],
+  ['o', 'ö'],
+  ['e', 'É'],
+  ['ss', 'ß'],
+  ['straße', 'strasse'],
+  ['ae', 'æ'],
+  ['oe', 'œ'],
+  ['dz', 'ǆ'],
+  ['fi', 'ﬁ'],
+  ['i', 'İ'],
+  ['a', 'ａ'],
+  ['user@b.com', 'ｕｓｅｒ@b.com'],
+  ['あ', 'ア'],
+  ['Ångström', 'angstrom'],
+  ['a\u0301', 'á'],
+  ['o', 'ø'],
+  ['xii', 'Ⅻ'],
+  ['hello', 'HELLO'],
+]
+
+const COLLATES_DIFFERENT: [string, string][] = [
+  ['i', 'ı'], // dotless i is a distinct letter, not a case variant
+  ['hello', 'hello '], // 0900 collations are NO PAD
+  ['ab', 'a b'],
+  ['a.b', 'ab'],
+  ['x', 'χ'],
+  ['v', 'w'],
+  ['th', 'þ'], // thorn is its own letter at primary strength, not a ligature
+  ['I', 'ı'],
+]
+
+Deno.test('ciEquals matches utf8mb4_0900_ai_ci on pairs verified against MySQL', () => {
+  for (const [a, b] of COLLATES_EQUAL) {
+    assertEquals(ciEquals(a, b), true, `${a} should collate equal to ${b}`)
+    assertEquals(ciEquals(b, a), true, `${b} should collate equal to ${a}`)
+  }
+  for (const [a, b] of COLLATES_DIFFERENT) {
+    assertEquals(ciEquals(a, b), false, `${a} should NOT collate equal to ${b}`)
+    assertEquals(ciEquals(b, a), false, `${b} should NOT collate equal to ${a}`)
+  }
+  // NULL never equals anything, including another NULL -- MySQL's rule, and
+  // what lets two address-less guests coexist under a UNIQUE index.
+  assertEquals(ciEquals(null, null), false)
+  assertEquals(ciEquals(undefined, 'a'), false)
+  assertEquals(ciEquals('a', null), false)
+})
+
+// The collator follows its locale, and an unpinned one follows the machine's.
+// 'tr' and 'sv' genuinely disagree with MySQL, so a laptop configured either
+// way would run a different suite than CI. Note 'und' does NOT resolve to root.
+Deno.test('the collation comparison does not depend on the machine locale', () => {
+  assertEquals(
+    new Intl.Collator('en', { sensitivity: 'base' }).resolvedOptions().locale,
+    'en',
+  )
+  // The pair a pinned locale gets right and Turkish does not.
+  assertEquals(ciEquals('i', 'İ'), true)
 })
