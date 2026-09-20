@@ -2,6 +2,7 @@ import { assert, assertEquals } from '@std/assert'
 import {
   GOOGLE_ENV,
   GOOGLE_TOKEN_ENDPOINT as TOKEN_ENDPOINT,
+  GOOGLE_TOKEN_ERROR_BODY,
   makeTestApp,
   seedDefaultService,
   stubGoogleToken,
@@ -431,4 +432,32 @@ Deno.test('a retry after a double failure reconciles the missing email instead o
       'the way an unconditional existing?.userId === userId return would',
   )
   assertEquals(after?.emailVerified, true)
+})
+
+Deno.test("a rejected Google exchange is a 400 that never echoes Google's text", async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const { accessToken } = await guestWithToken(ctx)
+
+  const google = stubGoogleToken({}, {
+    status: 400,
+    body: GOOGLE_TOKEN_ERROR_BODY,
+  })
+  let res: Response
+  try {
+    res = await bind(ctx, accessToken)
+  } finally {
+    google.restore()
+  }
+
+  assertEquals(res.status, 400)
+  // Read as text, not json, so the assertions below see every byte the client
+  // actually receives rather than one field of a parsed object.
+  const body = await res.text()
+  assertEquals(JSON.parse(body).error.code, 'invalid_grant')
+  // Google's diagnosis describes OUR client_id's configuration, not anything
+  // the caller did or could fix, so it belongs in the server log alone.
+  assert(
+    !body.includes('Missing parameter') && !body.includes('invalid_request'),
+    `Google's diagnosis reached the client: ${body}`,
+  )
 })

@@ -357,7 +357,22 @@ export function idToken(claims: Record<string, unknown>): string {
 // untouched Google proves no code was redeemed. `bodies` captures what was
 // actually POSTed, as URLSearchParams -- e.g. a wrong redirect_uri sent to
 // real Google is a redirect_uri_mismatch that `calls` alone cannot see.
-export function stubGoogleToken(claims: Record<string, unknown>) {
+// The verbatim body real Google returned on 2026-09-20 when the token
+// exchange omitted redirect_uri. Fixtured rather than invented, so the failure
+// path is tested against Google's shape and not our guess at it.
+export const GOOGLE_TOKEN_ERROR_BODY = JSON.stringify({
+  error: 'invalid_request',
+  error_description: 'Missing parameter: redirect_uri',
+})
+
+export function stubGoogleToken(
+  claims: Record<string, unknown>,
+  // Set to make Google REJECT the exchange instead of returning an id_token.
+  // Without this there is no way to reach exchangeGoogleAuthCode's !res.ok
+  // branch, which is where the only diagnosis of a real-world bind failure
+  // gets written.
+  failure?: { status: number; body: string },
+) {
   const calls: string[] = []
   const bodies: URLSearchParams[] = []
   const real = globalThis.fetch
@@ -379,7 +394,14 @@ export function stubGoogleToken(claims: Record<string, unknown>) {
             : new URLSearchParams(init.body as string),
         )
       }
-      return Promise.resolve(Response.json({ id_token: idToken(claims) }))
+      return Promise.resolve(
+        failure
+          ? new Response(failure.body, {
+            status: failure.status,
+            headers: { 'content-type': 'application/json' },
+          })
+          : Response.json({ id_token: idToken(claims) }),
+      )
     }
     throw new Error(`unexpected fetch to ${url}`)
   }) as typeof fetch
