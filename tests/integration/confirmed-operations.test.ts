@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assert, assertEquals } from '@std/assert'
 import {
   authHeader,
   makeTestApp,
@@ -237,4 +237,115 @@ Deno.test('a confirmed self-service deletion is soft, and recoverable until it i
     1,
     'a confirmed deletion must be soft, not a hard delete that skips the cascade',
   )
+})
+
+// users.email is UNIQUE, and findAnyByEmail guarded only register() and the
+// two Google paths. The email-change path wrote straight through, so against
+// real MySQL the UPDATE raised a duplicate key AFTER the token had already
+// been consumed -- and /confirm's bare catch rendered it as "invalid or
+// expired". The owner lost a single-use link to an error that named the wrong
+// cause. In-memory it was worse than an error: two rows held one address.
+Deno.test('a self-service email change onto a taken address is refused up front', async () => {
+  const { app, userRepo, orgRepo, sentEmails } = makeTestApp()
+  await registerAndId(app, 'victim@b.com')
+  const moverId = await registerAndId(app, 'mover@b.com')
+  const audience = await seedDefaultService(orgRepo, moverId)
+  const { Authorization } = await authHeader(
+    app,
+    'mover@b.com',
+    PASSWORD,
+    audience,
+  )
+  const before = sentEmails.length
+
+  const res = await app.request(`/users/${moverId}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'victim@b.com' }),
+  })
+
+  assertEquals(res.status, 409)
+  assertEquals((await res.json()).error.code, 'email_taken')
+  assertEquals(
+    sentEmails.length,
+    before,
+    'no confirmation link for a change that can never be applied',
+  )
+  assertEquals((await userRepo.findById(moverId))?.email, 'mover@b.com')
+})
+
+// The collation is case-insensitive, so this is the same address to the UNIQUE
+// index even though it is not the same string to JavaScript.
+Deno.test('a case-differing address counts as taken on an email change', async () => {
+  const { app, orgRepo } = makeTestApp()
+  await registerAndId(app, 'held@b.com')
+  const moverId = await registerAndId(app, 'mover2@b.com')
+  const audience = await seedDefaultService(orgRepo, moverId)
+  const { Authorization } = await authHeader(
+    app,
+    'mover2@b.com',
+    PASSWORD,
+    audience,
+  )
+
+  const res = await app.request(`/users/${moverId}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'HELD@b.com' }),
+  })
+  assertEquals(res.status, 409)
+})
+
+// The operator path applies immediately with no confirmation step, so it needs
+// its own guard -- it cannot inherit the one on the request leg.
+Deno.test('an operator moving an email onto a taken address gets 409, not a driver error', async () => {
+  const { app, userRepo, orgRepo } = makeTestApp()
+  await registerAndId(app, 'taken8@b.com')
+  const id = await registerAndId(app, 'dana8@b.com')
+  await seedDefaultService(orgRepo, id)
+  const Authorization = `Bearer ${await seedPlatformAdmin(userRepo, [
+    'users:update:any',
+  ])}`
+
+  const res = await app.request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'taken8@b.com' }),
+  })
+  assertEquals(res.status, 409)
+  assertEquals((await userRepo.findById(id))?.email, 'dana8@b.com')
+})
+
+// The address can be taken between requesting the change and confirming it.
+// The re-check runs BEFORE the token is consumed, so the link survives a
+// conflict it did not cause, and the page says which one it was.
+Deno.test('an address taken after the link was sent fails the confirm without burning it', async () => {
+  const { app, userRepo, orgRepo, sentEmails } = makeTestApp()
+  const moverId = await registerAndId(app, 'mover3@b.com')
+  const audience = await seedDefaultService(orgRepo, moverId)
+  const { Authorization } = await authHeader(
+    app,
+    'mover3@b.com',
+    PASSWORD,
+    audience,
+  )
+  await app.request(`/users/${moverId}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'contested@b.com' }),
+  })
+  const link = sentEmails.at(-1)!.link
+  // Someone else registers it in the meantime.
+  const squatterId = await registerAndId(app, 'contested@b.com')
+
+  const res = await follow(app, link)
+  assertEquals(res.status, 409)
+  assert((await res.text()).includes('already in use'))
+  assertEquals((await userRepo.findById(moverId))?.email, 'mover3@b.com')
+
+  // The link was not consumed: once the conflict is gone it still works.
+  await userRepo.softDelete(squatterId)
+  await userRepo.update(squatterId, { email: null })
+  assertEquals((await follow(app, link)).status, 200)
+  assertEquals((await userRepo.findById(moverId))?.email, 'contested@b.com')
 })

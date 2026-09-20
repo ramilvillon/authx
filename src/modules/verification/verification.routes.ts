@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { validator } from 'hono-openapi/zod'
 import type { AppEnv } from '../../deps.ts'
+import { AppError } from '../../lib/errors.ts'
 import {
   passwordResetRequestSchema,
   passwordResetSchema,
@@ -19,7 +20,20 @@ const verification = new Hono<AppEnv>()
   .get('/confirm', validator('query', verifyQuerySchema), async (c) => {
     try {
       await c.var.verificationService.confirm(c.req.valid('query').token)
-    } catch {
+    } catch (e) {
+      // A taken address is neither invalid nor expired, and the link is still
+      // good -- saying "request a new one" would send the owner to re-run a
+      // flow that works.
+      if (e instanceof AppError && e.code === 'email_taken') {
+        return c.html(
+          verificationErrorPage(
+            'That address is already in use by another account. ' +
+              'The link is still valid -- confirm again once it is free, ' +
+              'or request the change to a different address.',
+          ),
+          409,
+        )
+      }
       return c.html(verificationErrorPage(), 400)
     }
     return c.html(verificationSuccessPage())

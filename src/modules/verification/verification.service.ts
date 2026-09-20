@@ -85,6 +85,11 @@ export function createVerificationService(deps: {
       // A guest has no address to authorise the change from.
       if (!user.email) throw AppError.of('account_has_no_email')
       if (user.email === newEmail) return
+      // Refuse here rather than at the confirm, where the token has already
+      // been consumed: the owner would lose a single-use link to a conflict
+      // they could see now.
+      const holder = await userRepo.findAnyByEmail(newEmail)
+      if (holder && holder.id !== userId) throw AppError.of('email_taken')
       await startConfirmation(userId, 'email_change', newEmail, user.email)
     },
     // Self-service account deletion: authorised from the current address, the
@@ -123,6 +128,14 @@ export function createVerificationService(deps: {
       }
       const user = await userRepo.findById(record.userId)
       if (!user) throw AppError.of('invalid_verification_link')
+      // Before the consume, not after: the address can be taken between the
+      // request and the click, and that conflict is not the owner's doing --
+      // so it must not cost them the link. Re-checked rather than trusted from
+      // startEmailChange for the same reason.
+      if (record.purpose === 'email_change') {
+        const holder = await userRepo.findAnyByEmail(record.email)
+        if (holder && holder.id !== user.id) throw AppError.of('email_taken')
+      }
       if (!(await verificationRepo.consume(record.id))) {
         throw AppError.of('invalid_verification_link')
       }

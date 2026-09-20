@@ -1,12 +1,16 @@
 import { z } from 'zod'
 
 export const registerSchema = z.object({
-  email: z.string().email(),
+  // .max(255) is the users.email column width. MySQL runs STRICT_TRANS_TABLES,
+  // so an over-length value is a driver error (1406) rather than a truncation
+  // -- a 500 on what is plainly a bad request. Every admin schema already caps
+  // to its column; this one did not.
+  email: z.string().email().max(255),
   password: z.string().min(8),
 })
 
 export const updateUserSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().email().max(255).optional(),
   password: z.string().min(8).optional(),
   current_password: z.string().optional(),
   name: z.string().max(255).optional(),
