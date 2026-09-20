@@ -59,7 +59,7 @@ Deno.test('in-memory user repo enforces the UNIQUE indexes MySQL has', async () 
   await assertRejects(
     () => repo.create(row({ id: 'u1', email: 'other@b.com' })),
     Error,
-    'duplicate users.id',
+    'duplicate users.PRIMARY',
   )
   await assertRejects(
     () => repo.create(row({ email: 'a@b.com' })),

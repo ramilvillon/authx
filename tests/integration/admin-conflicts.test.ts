@@ -146,3 +146,55 @@ Deno.test('the same name in a DIFFERENT service is not a conflict', async () => 
 
   assertEquals(res.status, 201)
 })
+
+// Every char column is utf8mb4_0900_ai_ci, so the UNIQUE indexes above collapse
+// case: 'ACME' and 'acme' are one slug to the database. The doubles compared
+// with ===, so in this mode the second insert looked free and the suite could
+// have pinned a 201 that MySQL would refuse.
+Deno.test('a slug, audience, role name or permission key differing only in case is still taken', async () => {
+  const { userRepo, app } = makeTestApp()
+  const token = await seedPlatformAdmin(userRepo)
+  const { orgId, serviceId } = await orgAndService(app, token)
+
+  const org = await app.request(
+    '/orgs',
+    post(token, { slug: 'ACME', name: 'A' }),
+  )
+  assertEquals(org.status, 409)
+  assertEquals((await org.json()).error.code, 'org_slug_taken')
+
+  const svc = await app.request(
+    `/orgs/${orgId}/services`,
+    post(token, {
+      slug: 'other',
+      name: 'Other',
+      audience: 'ACME-APP',
+      type: 'public',
+      redirectUris: [],
+    }),
+  )
+  assertEquals(svc.status, 409)
+  assertEquals((await svc.json()).error.code, 'service_audience_taken')
+
+  await app.request(
+    `/services/${serviceId}/roles`,
+    post(token, { name: 'editor' }),
+  )
+  const role = await app.request(
+    `/services/${serviceId}/roles`,
+    post(token, { name: 'Editor' }),
+  )
+  assertEquals(role.status, 409)
+  assertEquals((await role.json()).error.code, 'role_name_taken')
+
+  await app.request(
+    `/services/${serviceId}/permissions`,
+    post(token, { key: 'docs:read' }),
+  )
+  const perm = await app.request(
+    `/services/${serviceId}/permissions`,
+    post(token, { key: 'Docs:Read' }),
+  )
+  assertEquals(perm.status, 409)
+  assertEquals((await perm.json()).error.code, 'permission_key_taken')
+})
