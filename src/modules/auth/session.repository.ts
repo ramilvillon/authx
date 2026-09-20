@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 export type SessionRecord = {
   id: string
   userId: string
@@ -32,14 +34,22 @@ export type SessionRepository = {
 export function createInMemorySessionRepository(): SessionRepository {
   const byId = new Map<string, SessionRecord>()
   return {
-    create(s) {
+    async create(s) {
+      for (const existing of byId.values()) {
+        if (existing.id === s.id) {
+          throw duplicateKey('sessions', 'PRIMARY', s.id)
+        }
+        if (ciEquals(existing.tokenHash, s.tokenHash)) {
+          throw duplicateKey('sessions', 'token_hash', s.tokenHash)
+        }
+      }
       byId.set(s.id, { ...s, revokedAt: null, createdAt: new Date() })
-      return Promise.resolve()
+      await Promise.resolve()
     },
     findActiveByTokenHash(tokenHash) {
       for (const s of byId.values()) {
         if (
-          s.tokenHash === tokenHash && !s.revokedAt &&
+          ciEquals(s.tokenHash, tokenHash) && !s.revokedAt &&
           s.expiresAt.getTime() > Date.now()
         ) return Promise.resolve({ ...s })
       }

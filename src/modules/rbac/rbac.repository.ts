@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 export type RoleRecord = { id: string; appServiceId: string; name: string }
 export type PermissionRecord = { id: string; appServiceId: string; key: string }
 
@@ -34,14 +36,37 @@ export function createInMemoryRbacRepository(): RbacRepository {
   const clientRoleIds = new Map<string, Set<string>>() // clientAppServiceId -> roleIds
 
   return {
-    createRole(r) {
+    async createRole(r) {
+      for (const existing of roles.values()) {
+        if (existing.id === r.id) throw duplicateKey('roles', 'PRIMARY', r.id)
+        if (
+          existing.appServiceId === r.appServiceId &&
+          ciEquals(existing.name, r.name)
+        ) {
+          throw duplicateKey('roles', 'app_service_id_name', r.name)
+        }
+      }
       roles.set(r.id, { ...r })
-      return Promise.resolve({ ...r })
+      return await Promise.resolve({ ...r })
     },
-    createPermission(p) {
+    async createPermission(p) {
+      for (const existing of perms.values()) {
+        if (existing.id === p.id) {
+          throw duplicateKey('permissions', 'PRIMARY', p.id)
+        }
+        if (
+          existing.appServiceId === p.appServiceId &&
+          ciEquals(existing.key, p.key)
+        ) {
+          throw duplicateKey('permissions', 'app_service_id_key', p.key)
+        }
+      }
       perms.set(p.id, { ...p })
-      return Promise.resolve({ ...p })
+      return await Promise.resolve({ ...p })
     },
+    // The three join tables below are Sets keyed by their composite PRIMARY
+    // KEY, so a repeat is a no-op. That is deliberate and matches the drizzle
+    // side, which inserts with onDuplicateKeyUpdate -- do not make these throw.
     grantPermissionToRole(roleId, permissionId) {
       rolePerms.add(`${roleId}:${permissionId}`)
       return Promise.resolve()
@@ -57,7 +82,7 @@ export function createInMemoryRbacRepository(): RbacRepository {
     },
     findRoleByName(appServiceId, name) {
       for (const r of roles.values()) {
-        if (r.appServiceId === appServiceId && r.name === name) {
+        if (r.appServiceId === appServiceId && ciEquals(r.name, name)) {
           return Promise.resolve({ ...r })
         }
       }
@@ -65,7 +90,7 @@ export function createInMemoryRbacRepository(): RbacRepository {
     },
     findPermissionByKey(appServiceId, key) {
       for (const p of perms.values()) {
-        if (p.appServiceId === appServiceId && p.key === key) {
+        if (p.appServiceId === appServiceId && ciEquals(p.key, key)) {
           return Promise.resolve({ ...p })
         }
       }

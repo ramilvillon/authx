@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 export type AuthCodeRecord = {
   id: string
   codeHash: string
@@ -36,13 +38,21 @@ export type AuthCodeRepository = {
 export function createInMemoryAuthCodeRepository(): AuthCodeRepository {
   const byId = new Map<string, AuthCodeRecord>()
   return {
-    create(c) {
+    async create(c) {
+      for (const existing of byId.values()) {
+        if (existing.id === c.id) {
+          throw duplicateKey('authorization_codes', 'PRIMARY', c.id)
+        }
+        if (ciEquals(existing.codeHash, c.codeHash)) {
+          throw duplicateKey('authorization_codes', 'code_hash', c.codeHash)
+        }
+      }
       byId.set(c.id, { ...c, consumedAt: null })
-      return Promise.resolve()
+      await Promise.resolve()
     },
     findByCodeHash(codeHash) {
       for (const c of byId.values()) {
-        if (c.codeHash === codeHash) return Promise.resolve({ ...c })
+        if (ciEquals(c.codeHash, codeHash)) return Promise.resolve({ ...c })
       }
       return Promise.resolve(null)
     },

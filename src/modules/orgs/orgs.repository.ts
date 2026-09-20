@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 export type OrgRecord = {
   id: string
   slug: string
@@ -69,41 +71,63 @@ const defined = <T extends object>(o: T): Partial<T> =>
 export function createInMemoryOrgRepository(): OrgRepository {
   const orgs = new Map<string, OrgRecord>()
   const services = new Map<string, AppServiceRecord>()
+  // A Set keyed by the UNIQUE(user_id, org_id) pair, which makes it idempotent
+  // -- matching addMember's onDuplicateKeyUpdate rather than a plain insert.
+  // memberships.id is not modelled: nothing but crypto.randomUUID() writes it.
   const members = new Set<string>() // `${userId}:${orgId}`
 
   return {
-    createOrg(o) {
+    async createOrg(o) {
+      for (const existing of orgs.values()) {
+        if (existing.id === o.id) {
+          throw duplicateKey('organizations', 'PRIMARY', o.id)
+        }
+        if (ciEquals(existing.slug, o.slug)) {
+          throw duplicateKey('organizations', 'slug', o.slug)
+        }
+      }
       orgs.set(o.id, { ...o })
-      return Promise.resolve({ ...o })
+      return await Promise.resolve({ ...o })
     },
     findOrgById(id) {
       return Promise.resolve(orgs.has(id) ? { ...orgs.get(id)! } : null)
     },
     findOrgBySlug(slug) {
       for (const o of orgs.values()) {
-        if (o.slug === slug) return Promise.resolve({ ...o })
+        if (ciEquals(o.slug, slug)) return Promise.resolve({ ...o })
       }
       return Promise.resolve(null)
     },
     listOrgs() {
       return Promise.resolve([...orgs.values()].map((o) => ({ ...o })))
     },
-    createService(s) {
+    async createService(s) {
+      for (const existing of services.values()) {
+        if (existing.id === s.id) {
+          throw duplicateKey('app_services', 'PRIMARY', s.id)
+        }
+        if (ciEquals(existing.clientId, s.clientId)) {
+          throw duplicateKey('app_services', 'client_id', s.clientId)
+        }
+        if (ciEquals(existing.audience, s.audience)) {
+          throw duplicateKey('app_services', 'audience', s.audience)
+        }
+      }
       services.set(s.id, { ...s })
-      return Promise.resolve({ ...s })
+      return await Promise.resolve({ ...s })
     },
     findServiceById(id) {
       return Promise.resolve(services.has(id) ? { ...services.get(id)! } : null)
     },
     findServiceByAudience(audience) {
       for (const s of services.values()) {
-        if (s.audience === audience) return Promise.resolve({ ...s })
+        if (ciEquals(s.audience, audience)) return Promise.resolve({ ...s })
       }
       return Promise.resolve(null)
     },
     findServiceByClientId(clientId) {
       for (const s of services.values()) {
-        if (s.clientId === clientId) return Promise.resolve({ ...s })
+        if (ciEquals(s.clientId, clientId)) return Promise.resolve({ ...s })
       }
       return Promise.resolve(null)
     },

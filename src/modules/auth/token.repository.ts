@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 export type RefreshTokenRecord = {
   id: string
   userId: string
@@ -38,23 +40,38 @@ export type RefreshTokenRepository = {
 export function createInMemoryRefreshTokenRepository(): RefreshTokenRepository {
   const byId = new Map<string, RefreshTokenRecord>()
 
+  // refresh_tokens.token_hash is UNIQUE, which is what makes a hash collision
+  // a loud error instead of one token silently shadowing another.
+  function assertInsertable(t: { id: string; tokenHash: string }) {
+    for (const existing of byId.values()) {
+      if (existing.id === t.id) {
+        throw duplicateKey('refresh_tokens', 'PRIMARY', t.id)
+      }
+      if (ciEquals(existing.tokenHash, t.tokenHash)) {
+        throw duplicateKey('refresh_tokens', 'token_hash', t.tokenHash)
+      }
+    }
+  }
+
   return {
-    create(token) {
+    async create(token) {
+      assertInsertable(token)
       byId.set(token.id, { ...token, revokedAt: null, replacedBy: null })
-      return Promise.resolve()
+      await Promise.resolve()
     },
     findByHash(tokenHash) {
       for (const t of byId.values()) {
-        if (t.tokenHash === tokenHash) return Promise.resolve({ ...t })
+        if (ciEquals(t.tokenHash, tokenHash)) return Promise.resolve({ ...t })
       }
       return Promise.resolve(null)
     },
-    rotate(oldId, next) {
+    async rotate(oldId, next) {
       const old = byId.get(oldId)
-      if (!old || old.revokedAt) return Promise.resolve(false)
+      if (!old || old.revokedAt) return await Promise.resolve(false)
+      assertInsertable(next)
       byId.set(oldId, { ...old, revokedAt: new Date(), replacedBy: next.id })
       byId.set(next.id, { ...next, revokedAt: null, replacedBy: null })
-      return Promise.resolve(true)
+      return await Promise.resolve(true)
     },
     revoke(id) {
       const t = byId.get(id)

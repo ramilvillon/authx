@@ -1,3 +1,5 @@
+import { ciEquals, duplicateKey } from '../../lib/inmemory.ts'
+
 // Redemption is purpose-scoped: a token is only ever valid at the path that
 // matches the purpose it was minted for.
 export type TokenPurpose =
@@ -38,13 +40,25 @@ export type VerificationTokenRepository = {
 export function createInMemoryVerificationTokenRepository(): VerificationTokenRepository {
   const byId = new Map<string, VerificationTokenRecord>()
   return {
-    create(t) {
+    async create(t) {
+      for (const existing of byId.values()) {
+        if (existing.id === t.id) {
+          throw duplicateKey('email_verification_tokens', 'PRIMARY', t.id)
+        }
+        if (ciEquals(existing.tokenHash, t.tokenHash)) {
+          throw duplicateKey(
+            'email_verification_tokens',
+            'token_hash',
+            t.tokenHash,
+          )
+        }
+      }
       byId.set(t.id, { ...t, consumedAt: null })
-      return Promise.resolve()
+      await Promise.resolve()
     },
     findByHash(tokenHash) {
       for (const t of byId.values()) {
-        if (t.tokenHash === tokenHash) return Promise.resolve({ ...t })
+        if (ciEquals(t.tokenHash, tokenHash)) return Promise.resolve({ ...t })
       }
       return Promise.resolve(null)
     },
