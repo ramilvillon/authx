@@ -16,7 +16,17 @@ Deno.test({
   ignore: !hasMail,
   fn: async () => {
     const config = loadConfig(Deno.env.toObject())
-    const sender = createSmtpEmailSender(config, createLogger(config))
+    // Pass a destination so createLogger does not build the pino-pretty
+    // worker transport. LOG_LEVEL=debug (the default in .env.example, so CI
+    // too) makes it do that, and the worker's thread-stream keeps a polling
+    // setTimeout alive that Deno's sanitizer reports as a leak -- whether the
+    // timer happens to be pending when the test ends is a coin flip, which is
+    // why this passed often enough to look green. The test is about SMTP
+    // delivery; it has no interest in the log output.
+    const sender = createSmtpEmailSender(
+      config,
+      createLogger(config, { write() {} }),
+    )
     const to = `e2e-${crypto.randomUUID()}@example.test`
     const link = 'https://auth.acme.test/confirm?token=e2e-token&a=1'
 
