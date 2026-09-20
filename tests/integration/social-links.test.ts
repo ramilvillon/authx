@@ -121,6 +121,58 @@ Deno.test('the code exchange sends no redirect_uri -- a native server auth code 
   )
 })
 
+// The value is configuration because only Google can say which one is right,
+// and no stub can stand in for that -- so the point of these two is that a
+// wrong answer is a config change rather than a code change and a deploy.
+// GOOGLE_REDIRECT_URI stays set throughout: it belongs to the browser leg and
+// must not leak into this exchange, which was the original Critical finding.
+Deno.test('GOOGLE_BIND_REDIRECT_URI=postmessage sends the web/JS popup value', async () => {
+  const ctx = makeTestApp({
+    ...GOOGLE_ENV,
+    GOOGLE_BIND_REDIRECT_URI: 'postmessage',
+  })
+  const { accessToken } = await guestWithToken(ctx)
+  const google = stubGoogleToken({
+    sub: 'g-901',
+    email: 'pm@example.test',
+    email_verified: true,
+  })
+  try {
+    assertEquals((await bind(ctx, accessToken, 'web-popup-code')).status, 200)
+  } finally {
+    google.restore()
+  }
+  assertEquals(google.bodies[0].get('redirect_uri'), 'postmessage')
+})
+
+Deno.test('GOOGLE_BIND_REDIRECT_URI set to a URI sends that URI verbatim', async () => {
+  const ctx = makeTestApp({
+    ...GOOGLE_ENV,
+    GOOGLE_BIND_REDIRECT_URI: 'https://app.example.test/oauth2/callback',
+  })
+  const { accessToken } = await guestWithToken(ctx)
+  const google = stubGoogleToken({
+    sub: 'g-902',
+    email: 'uri@example.test',
+    email_verified: true,
+  })
+  try {
+    assertEquals((await bind(ctx, accessToken, 'redirect-code')).status, 200)
+  } finally {
+    google.restore()
+  }
+  assertEquals(
+    google.bodies[0].get('redirect_uri'),
+    'https://app.example.test/oauth2/callback',
+    'sent verbatim -- Google matches the registered URI exactly',
+  )
+  assertEquals(
+    google.bodies[0].get('redirect_uri') === GOOGLE_ENV.GOOGLE_REDIRECT_URI,
+    false,
+    "the browser leg's redirect URI must never be what this exchange sends",
+  )
+})
+
 Deno.test('binding is idempotent for the same Google account', async () => {
   const ctx = makeTestApp(GOOGLE_ENV)
   const { accessToken } = await guestWithToken(ctx)

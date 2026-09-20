@@ -123,6 +123,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                                          |
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                      |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                            |
+| `GOOGLE_BIND_REDIRECT_URI` | _(empty)_                            | `redirect_uri` for the server-auth-code exchange; empty sends none (native SDK). See Guest accounts             |
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                           |
 | `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                              |
 | `GUEST_RATE_LIMIT`         | `10`                                 | per-IP max `POST /users/guest` creations per `RATE_LIMIT_WINDOW_MS`                                             |
@@ -175,6 +176,26 @@ code>" }`), taking a one-time
 browser redirect flow's authorization code. A successful bind adds the Google
 address as a second, verified sign-in identifier; the generated username and
 password keep working unchanged.
+
+Which `redirect_uri` that exchange sends is **`GOOGLE_BIND_REDIRECT_URI`**, and
+the right value depends on how the client obtained the code:
+
+| client                                          | code from               | set it to                                   |
+| ----------------------------------------------- | ----------------------- | ------------------------------------------- |
+| Android / iOS SDK                               | `requestServerAuthCode` | _(leave empty — no `redirect_uri` is sent)_ |
+| Web / JS popup                                  | `initCodeClient`        | `postmessage`                               |
+| A client that authorized against a redirect URI | its own flow            | that exact URI                              |
+
+The default is empty, which is the native case this endpoint was built for. It
+is configuration rather than a constant on purpose: only Google can accept or
+reject the exchange, so the correct value cannot be established from this side —
+and a wrong one is then a config change rather than a redeploy. A failure is
+logged server-side with Google's own `error_description` (the client only ever
+sees a generic `invalid_grant`), so the log names the cause.
+
+Note this is **not** `GOOGLE_REDIRECT_URI`, which belongs to the browser
+redirect leg at `/oauth/google`. Sending that one here is a
+`redirect_uri_mismatch` against real Google.
 
 Two things a client integration needs to know that are not obvious from the API
 surface:
