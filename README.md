@@ -246,11 +246,29 @@ own record (self) works with a token for any audience.
 ```
 
 Two fields changed with guest accounts, and a client parsing this strictly
-should note both: **`email` is nullable** (a guest has no address until it binds
-one) and **`username` was added** (null for a registered user, set for a guest).
-Nothing consumed the response before guests shipped, so no version of this
-document ever described a non-nullable `email` — it is recorded here so the
-change is not rediscovered as a bug.
+should note both: **`email` is nullable** and **`username` was added**. Nothing
+consumed the response before guests shipped, so no version of this document ever
+described a non-nullable `email` — it is recorded here so the change is not
+rediscovered as a bug.
+
+The rule governing the two: **a username is assigned at creation and never
+changes; an email can be filled in later.** Only `POST /users/guest` ever writes
+a username, and no path assigns one to an existing row — so a non-null
+`username` means the account was created as a guest, permanently. It does _not_
+mean the account still lacks an address: a guest that binds Google has both.
+
+|                            | `email`         | `username`  |
+| -------------------------- | --------------- | ----------- |
+| Registered                 | set at creation | always null |
+| Guest, unbound             | null            | set         |
+| Guest, after a Google bind | set             | set         |
+
+A guest's address is filled in by the bind (`POST /users/me/social-links`, which
+adopts Google's address only when there is none — a user who already has one
+keeps it), or by an operator holding `users:update:any`. The self-service
+`PATCH` path cannot do it: the confirming link goes to the account's _current_
+address, so an address-less account is refused with `account_has_no_email`, as
+it is for self-service deletion.
 
 Guest usernames are deliberately included on the operator-facing listings. They
 are not a credential (the password is), and the routes already restrict who can
