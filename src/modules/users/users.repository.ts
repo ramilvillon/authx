@@ -70,10 +70,37 @@ export function createInMemoryUserRepository(
   const byId = new Map<string, UserRecord>()
   const userRoleNames = new Map<string, Set<string>>()
 
+  // users.email and users.username are utf8mb4_0900_ai_ci: MySQL matches them
+  // case-insensitively and the UNIQUE index rejects case-variants as
+  // duplicates. `===` would make the double disagree with the database about
+  // which rows exist -- the divergence that hid the email-change bug.
+  // ponytail: lowercase, not full ai_ci -- accent folding has never come up.
+  // If it does, this is the one place to change.
+  const same = (a: string | null | undefined, b: string | null | undefined) =>
+    a != null && b != null && a.toLowerCase() === b.toLowerCase()
+
+  // MySQL refuses a duplicate id/email/username; a Map silently overwrites or
+  // stores a second row. Throwing here keeps a test honest: whatever the
+  // driver would reject must be rejected in this mode too.
+  function assertNoConflict(next: UserRecord) {
+    for (const u of byId.values()) {
+      if (u.id === next.id) throw new Error(`duplicate users.id ${next.id}`)
+      if (same(u.email, next.email)) {
+        throw new Error(`duplicate users.email ${next.email}`)
+      }
+      if (same(u.username, next.username)) {
+        throw new Error(`duplicate users.username ${next.username}`)
+      }
+    }
+  }
+
   return {
-    create(user) {
+    // async, not a sync throw: the drizzle twin rejects, and a caller that
+    // handles the duplicate with .catch() must behave the same in both.
+    async create(user) {
+      assertNoConflict(user)
       byId.set(user.id, { ...user })
-      return Promise.resolve({ ...user })
+      return await Promise.resolve({ ...user })
     },
     findById(id) {
       const u = byId.get(id)
@@ -84,7 +111,7 @@ export function createInMemoryUserRepository(
         // `u.email === email` alone would match null-to-null; MySQL's
         // `WHERE email = NULL` never matches. Keep the double as strict as
         // the database or it hides bugs.
-        if (u.email !== null && u.email === email && !u.deletedAt) {
+        if (same(u.email, email) && !u.deletedAt) {
           return Promise.resolve({ ...u })
         }
       }
@@ -92,7 +119,7 @@ export function createInMemoryUserRepository(
     },
     findByUsername(username) {
       for (const u of byId.values()) {
-        if (u.username && u.username === username && !u.deletedAt) {
+        if (same(u.username, username) && !u.deletedAt) {
           return Promise.resolve({ ...u })
         }
       }
@@ -112,22 +139,31 @@ export function createInMemoryUserRepository(
         permissions: [...perms],
       })
     },
-    update(id, patch) {
+    async update(id, patch) {
       const u = byId.get(id)
-      if (!u) return Promise.resolve(null)
+      if (!u) return await Promise.resolve(null)
       const next = { ...u, ...patch, updatedAt: new Date() }
+      // Same UNIQUE index as create: moving an address onto one another row
+      // holds is a duplicate-key error against MySQL, not a silent overwrite.
+      if (patch.email !== undefined) {
+        for (const other of byId.values()) {
+          if (other.id !== id && same(other.email, next.email)) {
+            throw new Error(`duplicate users.email ${next.email}`)
+          }
+        }
+      }
       byId.set(id, next)
-      return Promise.resolve({ ...next })
+      return await Promise.resolve({ ...next })
     },
     markEmailVerified(id, email) {
       const u = byId.get(id)
-      if (!u || u.email !== email) return Promise.resolve(false)
+      if (!u || !same(u.email, email)) return Promise.resolve(false)
       byId.set(id, { ...u, emailVerified: true, updatedAt: new Date() })
       return Promise.resolve(true)
     },
     findAnyByEmail(email) {
       for (const u of byId.values()) {
-        if (u.email !== null && u.email === email) {
+        if (same(u.email, email)) {
           return Promise.resolve({ ...u })
         }
       }

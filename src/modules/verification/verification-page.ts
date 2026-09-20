@@ -12,9 +12,10 @@ export function verificationSuccessPage(): string {
   )
 }
 
-export function verificationErrorPage(): string {
+export function verificationErrorPage(reason?: string): string {
   return page(
     'Verification failed',
-    'This verification link is invalid or has expired. Request a new one.',
+    reason ??
+      'This verification link is invalid or has expired. Request a new one.',
   )
 }

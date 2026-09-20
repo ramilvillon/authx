@@ -263,6 +263,12 @@ mean the account still lacks an address: a guest that binds Google has both.
 | Guest, unbound             | null            | set         |
 | Guest, after a Google bind | set             | set         |
 
+Addresses are matched **case-insensitively** — `casey@b.com` and `CASEY@b.com`
+are the same account, so the second one cannot be registered and either spelling
+signs in. They are stored as they were typed; mail always goes to the stored
+spelling. The same rule decides whether an address is already taken on an email
+change. An address longer than 255 characters is rejected with 400.
+
 A guest's address is filled in by the bind (`POST /users/me/social-links`, which
 adopts Google's address only when there is none — a user who already has one
 keeps it), or by an operator holding `users:update:any`. The self-service

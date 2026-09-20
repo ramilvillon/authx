@@ -107,11 +107,8 @@ Deno.test('verifyEmail does not verify an address swapped in after the binding c
 Deno.test('resend uses the stored address, so a case-differing request still yields a usable link', async () => {
   const ctx = makeTestDeps()
   const user = await seedUser(ctx)
-  // ponytail: MySQL's collation matches case-insensitively; the in-memory repo
-  // is exact, so fake the production lookup here rather than change the double.
-  const exact = ctx.userRepo.findByEmail
-  ctx.userRepo.findByEmail = (email) => exact(email.toLowerCase())
-
+  // The double matches case-insensitively now, like the collation, so this no
+  // longer needs the lookup faked out.
   await ctx.deps.verificationService.resend('A@B.com')
   assertEquals(ctx.sentEmails[0].to, user.email)
   const token = new URL(ctx.sentEmails[0].link).searchParams.get('token')!

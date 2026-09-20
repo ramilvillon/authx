@@ -133,7 +133,16 @@ export function createUserService(deps: {
           | 'picture'
         >
       > = {}
-      if (input.email) patch.email = input.email
+      if (input.email) {
+        // users.email is UNIQUE. Without this the write reaches the driver as
+        // a duplicate-key error and surfaces as a 500 -- register() and both
+        // Google paths already guard with findAnyByEmail; this one did not.
+        // findAnyByEmail, not findByEmail: a soft-deleted row still occupies
+        // the address until the purge.
+        const holder = await repo.findAnyByEmail(input.email)
+        if (holder && holder.id !== id) throw AppError.of('email_taken')
+        patch.email = input.email
+      }
       if (input.password) {
         // A bearer token says who you are, not that you know the password it
         // was minted from. Without this challenge, anyone holding a stolen
