@@ -34,27 +34,38 @@ function decodeIdToken(idToken: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-// Redeems a one-time server auth code from a native Google SDK. There is
-// deliberately no redirect_uri in this exchange: a native SDK's server auth
-// code is never issued against one (RFC 6749 §4.1.3 sends the parameter only
-// if one was present on the authorization request). A web/JS client using
-// Google's `postmessage` flow instead would need redirect_uri: 'postmessage'
-// -- a different code shape from this one, and not something this function
-// should guess at.
+// Redeems a one-time server auth code from a native Google SDK.
+//
+// `redirectUri` is empty by default, and empty means the parameter is OMITTED:
+// a native SDK's server auth code is never issued against a redirect URI, and
+// RFC 6749 4.1.3 sends the parameter only if one was present on the
+// authorization request. A web/JS client using Google's popup flow needs
+// 'postmessage' instead, and a client that did carry a redirect URI needs that
+// exact URI -- so this is a caller's decision, taken from configuration
+// (GOOGLE_BIND_REDIRECT_URI), not a constant this function picks.
+//
+// Nothing here can prove which value is right: only Google accepts or rejects
+// the exchange, and the test stub asserts what we send, never what Google
+// makes of it. Keeping it configurable is what makes a wrong answer a config
+// change instead of a code change.
 export async function exchangeGoogleAuthCode(
   code: string,
-  cfg: { clientId: string; clientSecret: string },
+  cfg: { clientId: string; clientSecret: string; redirectUri?: string },
   logger: Logger,
 ): Promise<GoogleIdentity> {
+  const form = new URLSearchParams({
+    code,
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    grant_type: 'authorization_code',
+  })
+  // Appended only when set, so the default stays a body with no redirect_uri
+  // at all rather than an empty one -- those are different requests to Google.
+  if (cfg.redirectUri) form.set('redirect_uri', cfg.redirectUri)
   const res = await fetch(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
-      grant_type: 'authorization_code',
-    }),
+    body: form,
     // A hung Google should not hold this request open indefinitely; app.ts's
     // request-level timeout(15000) only releases the client, not this fetch.
     signal: AbortSignal.timeout(10_000),

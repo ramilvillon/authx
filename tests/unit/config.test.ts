@@ -126,3 +126,23 @@ Deno.test('insecureGoogleRedirectWarning flags only plain-http non-localhost red
     'not a valid URL',
   )
 })
+
+// The default is the whole promise of making this configurable: an existing
+// deployment that sets nothing must send exactly the request it sent before.
+// Empty means the parameter is omitted entirely, which is not the same wire
+// request as sending an empty one -- see exchangeGoogleAuthCode.
+Deno.test('GOOGLE_BIND_REDIRECT_URI defaults to empty and is independent of the browser leg', () => {
+  assertEquals(loadConfig(base).google.bindRedirectUri, '')
+  // Setting the browser leg's URI must not set this one. Those two being
+  // confused is the bug this endpoint originally shipped with.
+  assertEquals(
+    loadConfig({ ...base, GOOGLE_REDIRECT_URI: 'https://a.test/cb' })
+      .google.bindRedirectUri,
+    '',
+  )
+  assertEquals(
+    loadConfig({ ...base, GOOGLE_BIND_REDIRECT_URI: 'postmessage' })
+      .google.bindRedirectUri,
+    'postmessage',
+  )
+})

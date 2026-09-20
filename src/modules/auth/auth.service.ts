@@ -497,6 +497,10 @@ export function createAuthService(deps: {
       const identity = await exchangeGoogleAuthCode(code, {
         clientId: google.clientId,
         clientSecret: google.clientSecret,
+        // Empty by default, which means no redirect_uri on the wire -- the
+        // native SDK case. See GOOGLE_BIND_REDIRECT_URI in config.ts for when
+        // a client needs one of the other two answers.
+        redirectUri: google.bindRedirectUri,
       }, logger)
       // Never link on an unproven address -- same rule as loginWithGoogle.
       if (!identity.emailVerified) {

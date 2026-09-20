@@ -57,6 +57,28 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
+  // The redirect_uri sent when redeeming a server auth code at
+  // POST /users/me/social-links. Which value is correct depends on how the
+  // client obtained the code, and there are three answers:
+  //
+  //   unset/empty  -> the parameter is OMITTED. An Android/iOS SDK server auth
+  //                   code is not issued against a redirect URI, and RFC 6749
+  //                   4.1.3 sends the parameter only if the authorization
+  //                   request carried one. This is the default and the case
+  //                   the endpoint was built for.
+  //   postmessage  -> a web/JS client using Google's popup code flow.
+  //   <a URL>      -> a client that did carry a redirect URI on the
+  //                   authorization request; it must match exactly.
+  //
+  // It is configuration rather than a constant because the right answer cannot
+  // be proven from here -- only Google can accept or reject the exchange, and
+  // no test can stand in for that. Getting it wrong is then a config change,
+  // not a code change and a deploy. See GOOGLE_REDIRECT_URI for the separate
+  // browser-redirect leg, which is unrelated to this one.
+  // ponytail: unset and empty both mean "omit". If a client ever needs a
+  // literal empty redirect_uri on the wire, that is a fourth state and wants a
+  // sentinel value rather than another variable.
+  GOOGLE_BIND_REDIRECT_URI: z.string().default(''),
   // How long a row is kept AFTER it expires. This is the window in which a
   // replayed refresh token or authorization code is still recognised as a
   // replay rather than an unknown value, so it is a security setting, not
@@ -121,7 +143,13 @@ export type Config = {
     secure: boolean
     from: string
   }
-  google: { clientId: string; clientSecret: string; redirectUri: string }
+  google: {
+    clientId: string
+    clientSecret: string
+    redirectUri: string
+    // Empty means: send no redirect_uri on the bind exchange.
+    bindRedirectUri: string
+  }
   pruneRetention: number
   accountPurgeGrace: number
   rateLimit: { windowMs: number; max: number; guestMax: number }
@@ -167,6 +195,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       clientId: e.GOOGLE_CLIENT_ID,
       clientSecret: e.GOOGLE_CLIENT_SECRET,
       redirectUri: e.GOOGLE_REDIRECT_URI,
+      bindRedirectUri: e.GOOGLE_BIND_REDIRECT_URI,
     },
     pruneRetention: e.PRUNE_RETENTION,
     accountPurgeGrace: e.ACCOUNT_PURGE_GRACE,
