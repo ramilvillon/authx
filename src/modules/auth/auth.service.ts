@@ -77,6 +77,40 @@ export function createAuthService(deps: {
     }
   }
 
+  // Does `secret` authenticate as `service`? Allow-list on 'public': `type` is
+  // a free varchar, so a value the API never writes fails closed and demands
+  // the secret. A public client has none to present and always passes.
+  async function clientSecretOk(
+    service: AppServiceRecord,
+    secret: string | undefined,
+  ): Promise<boolean> {
+    if (service.type === 'public') return true
+    return service.clientSecretHash !== null && secret !== undefined &&
+      (await hashToken(secret)) === service.clientSecretHash
+  }
+
+  // RFC 6749 section 6 / RFC 7009 section 2.1: using or revoking a refresh
+  // token that belongs to a confidential client needs that client's
+  // credentials. The client must be the token's OWN service: another client
+  // authenticating perfectly well as itself is `wrongClient`. A client_id is
+  // required from a confidential client and, when a public one sends it, must
+  // still match.
+  async function authenticateTokenClient(
+    service: AppServiceRecord,
+    client: { id?: string; secret?: string },
+    wrongClient: 'invalid_grant' | 'invalid_client',
+  ): Promise<void> {
+    if (client.id !== undefined && client.id !== service.clientId) {
+      throw AppError.of(wrongClient)
+    }
+    if (service.type !== 'public' && client.id === undefined) {
+      throw AppError.of('invalid_client')
+    }
+    if (!(await clientSecretOk(service, client.secret))) {
+      throw AppError.of('invalid_client')
+    }
+  }
+
   async function activeSession(sessionToken: string) {
     const session = await sessionRepo.findActiveByTokenHash(
       await hashToken(sessionToken),
@@ -168,10 +202,19 @@ export function createAuthService(deps: {
       }
       return issueTokensForService(user.id, audience)
     },
-    async refreshGrant(refreshToken: string): Promise<TokenPair> {
+    async refreshGrant(
+      refreshToken: string,
+      client: { id?: string; secret?: string } = {},
+    ): Promise<TokenPair> {
       const hash = await hashToken(refreshToken)
       const existing = await tokenRepo.findByHash(hash)
       if (!existing) throw AppError.of('invalid_refresh_token')
+
+      const service = await orgRepo.findServiceById(existing.appServiceId)
+      if (!service) throw AppError.of('invalid_refresh_token')
+      // BEFORE reuse detection: otherwise anyone holding a stale token but not
+      // the client's secret could revoke the real client's whole family.
+      await authenticateTokenClient(service, client, 'invalid_grant')
 
       const isExpired = existing.expiresAt.getTime() <= Date.now()
       // Reuse of an already-revoked token signals theft: revoke the whole family.
@@ -187,8 +230,6 @@ export function createAuthService(deps: {
       // was, usable again once the address is verified.
       requireVerifiedEmail(subject)
 
-      const service = await orgRepo.findServiceById(existing.appServiceId)
-      if (!service) throw AppError.of('invalid_refresh_token')
       // Re-check membership on every rotation, exactly as issueTokensForService
       // does at first issue: removing a member is the revocation control, and
       // without this a removed user could keep rotating forever.
@@ -234,9 +275,18 @@ export function createAuthService(deps: {
         expires_in: config.accessTokenTtl,
       }
     },
-    async revoke(refreshToken: string): Promise<void> {
+    async revoke(
+      refreshToken: string,
+      client: { id?: string; secret?: string } = {},
+    ): Promise<void> {
       const existing = await tokenRepo.findByHash(await hashToken(refreshToken))
-      if (existing && !existing.revokedAt) await tokenRepo.revoke(existing.id)
+      // RFC 7009 section 2.2: an unknown token is still a success.
+      if (!existing) return
+      const service = await orgRepo.findServiceById(existing.appServiceId)
+      if (service) {
+        await authenticateTokenClient(service, client, 'invalid_client')
+      }
+      if (!existing.revokedAt) await tokenRepo.revoke(existing.id)
     },
     // Google is a way to sign in to the authorize flow, not a token endpoint:
     // the pending /oauth/authorize request already names the service, so the
@@ -420,11 +470,8 @@ export function createAuthService(deps: {
       // Every client except a public one must authenticate (secret stored as
       // sha256). Allow-list on 'public': `type` is a free varchar, so a value the
       // API never writes fails closed instead of skipping the secret.
-      if (service.type !== 'public') {
-        const ok = service.clientSecretHash !== null &&
-          input.clientSecret !== undefined &&
-          (await hashToken(input.clientSecret)) === service.clientSecretHash
-        if (!ok) throw AppError.of('invalid_client')
+      if (!(await clientSecretOk(service, input.clientSecret))) {
+        throw AppError.of('invalid_client')
       }
       if (!(await verifyChallenge(input.codeVerifier, record.codeChallenge))) {
         throw AppError.of('invalid_grant')

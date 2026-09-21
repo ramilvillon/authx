@@ -12,6 +12,10 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
   z.object({
     grant_type: z.literal('refresh_token'),
     refresh_token: z.string().min(1),
+    // Required when the token belongs to a confidential client (or sent via
+    // HTTP Basic instead); see authenticateTokenClient.
+    client_id: z.string().min(1).optional(),
+    client_secret: z.string().min(1).optional(),
   }),
   z.object({
     grant_type: z.literal('authorization_code'),
@@ -29,7 +33,12 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
   }),
 ])
 
-export const revokeSchema = z.object({ refresh_token: z.string().min(1) })
+export const revokeSchema = z.object({
+  refresh_token: z.string().min(1),
+  // As on the refresh grant: required for a confidential client's token.
+  client_id: z.string().min(1).optional(),
+  client_secret: z.string().min(1).optional(),
+})
 
 // RFC 6749 section 5.2. Only the token endpoints speak this shape; the rest of
 // the API keeps the catalogue's {error: {code, message}}.
