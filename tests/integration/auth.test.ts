@@ -69,7 +69,8 @@ Deno.test('refresh rotation + revoke', async () => {
       refresh_token: next.refresh_token,
     }),
   })
-  assertEquals(reuse.status, 401)
+  assertEquals(reuse.status, 400)
+  assertEquals((await reuse.json()).error, 'invalid_grant')
 })
 
 Deno.test('deleting the user revokes its in-flight access token', async () => {
