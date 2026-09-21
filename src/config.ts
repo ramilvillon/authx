@@ -54,6 +54,11 @@ const schema = z.object({
   EMAIL_LOG_LINKS: z.enum(['true', 'false']).default('false').transform((v) =>
     v === 'true'
   ),
+  // Refuse tokens and sessions to an account whose email is set but not yet
+  // verified. Off by default. Guests have no email and are unaffected; see
+  // unverifiableEmailWarning for the setting that makes this a lockout.
+  REQUIRE_EMAIL_VERIFICATION: z.enum(['true', 'false']).default('false')
+    .transform((v) => v === 'true'),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -136,6 +141,7 @@ export type Config = {
   authCodeTtl: number
   emailVerificationTtl: number
   emailLogLinks: boolean
+  requireEmailVerification: boolean
   smtp: {
     host: string
     port: number
@@ -184,6 +190,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     authCodeTtl: e.AUTH_CODE_TTL,
     emailVerificationTtl: e.EMAIL_VERIFICATION_TTL,
     emailLogLinks: e.EMAIL_LOG_LINKS,
+    requireEmailVerification: e.REQUIRE_EMAIL_VERIFICATION,
     smtp: {
       host: e.SMTP_HOST,
       port: e.SMTP_PORT,
@@ -233,4 +240,20 @@ export function insecureGoogleRedirectWarning(
     'so the browser will drop the Secure `state` cookie and every Google ' +
     'callback will fail with 401. Serve this over https (Google requires it ' +
     'for non-localhost redirect URIs anyway).'
+}
+
+// REQUIRE_EMAIL_VERIFICATION with no way to deliver the verification link is a
+// permanent lockout for every new account: nothing reaches the inbox, so
+// nothing can be verified. Without SMTP_HOST the log sender is wired, and it
+// prints the link only when EMAIL_LOG_LINKS is on. Returns the warning text, or
+// null when there is nothing to warn about.
+export function unverifiableEmailWarning(
+  c: Pick<Config, 'requireEmailVerification' | 'emailLogLinks'> & {
+    smtpHost: string
+  },
+): string | null {
+  if (!c.requireEmailVerification || c.smtpHost || c.emailLogLinks) return null
+  return 'REQUIRE_EMAIL_VERIFICATION is on but no verification email can be ' +
+    'delivered: SMTP_HOST is empty and EMAIL_LOG_LINKS is off. Every account ' +
+    'that registers now is locked out until one of them is set.'
 }

@@ -110,7 +110,11 @@ export function createVerificationService(deps: {
     // authorisation: find, assert purpose, assert fresh, consume, then act.
     // Consume happens BEFORE the effect so a replay loses the race rather than
     // repeating a destructive action.
-    async confirm(token: string): Promise<TokenPurpose> {
+    // Returns who and which address the link was for, so the route can follow
+    // an email change with a verification link to the new address.
+    async confirm(
+      token: string,
+    ): Promise<{ purpose: TokenPurpose; userId: string; email: string }> {
       const record = await verificationRepo.findByHash(await hashToken(token))
       // Allow-list, not a deny-list: this endpoint acts immediately, so a
       // purpose it does not handle (a password reset, which needs a form) would
@@ -159,7 +163,11 @@ export function createVerificationService(deps: {
         // userService.purgeDeletedBefore once the grace period expires.
         await userRepo.softDelete(user.id)
       }
-      return record.purpose
+      return {
+        purpose: record.purpose,
+        userId: record.userId,
+        email: record.email,
+      }
     },
     // Always resolves, whether or not the address is registered: the response
     // must not reveal which. Mirrors `resend`.

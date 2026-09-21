@@ -6,6 +6,7 @@ export const ERRORS = {
   invalid_client: { status: 401, message: 'client authentication failed' },
   invalid_request: { status: 400, message: 'invalid request' },
   unsupported_grant_type: { status: 400, message: 'unsupported grant type' },
+  email_not_verified: { status: 403, message: 'email address not verified' },
   invalid_token: { status: 401, message: 'invalid token' },
   missing_bearer_token: { status: 401, message: 'missing bearer token' },
   invalid_credentials: { status: 401, message: 'invalid credentials' },

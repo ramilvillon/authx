@@ -1,5 +1,5 @@
 import type { Config } from '../../config.ts'
-import type { UserRepository } from '../users/users.repository.ts'
+import type { UserRecord, UserRepository } from '../users/users.repository.ts'
 import type {
   NewRefreshToken,
   RefreshTokenRepository,
@@ -58,6 +58,25 @@ export function createAuthService(deps: {
     return (await userRepo.findById(userId)) !== null
   }
 
+  // REQUIRE_EMAIL_VERIFICATION. Called at every point that issues a token or
+  // a session, because refresh tokens slide: a check at login alone would never
+  // reach an account that already holds one. A guest has no email, so there is
+  // nothing to verify. Callers on a password path must call this only AFTER the
+  // password is proven, or an unverified account becomes discoverable by
+  // address alone. emailVerified is optional on the record type but NOT NULL
+  // DEFAULT false in the table, so a missing value is unverified, as the
+  // database has it.
+  function requireVerifiedEmail(
+    user: Pick<UserRecord, 'email' | 'emailVerified'>,
+  ): void {
+    if (
+      config.requireEmailVerification && user.email !== null &&
+      !user.emailVerified
+    ) {
+      throw AppError.of('email_not_verified')
+    }
+  }
+
   async function activeSession(sessionToken: string) {
     const session = await sessionRepo.findActiveByTokenHash(
       await hashToken(sessionToken),
@@ -71,7 +90,9 @@ export function createAuthService(deps: {
     audience: string,
     oidcScope?: string,
   ): Promise<TokenPair> {
-    if (!(await subjectExists(userId))) throw AppError.of('invalid_grant')
+    const user = await userRepo.findById(userId)
+    if (!user) throw AppError.of('invalid_grant')
+    requireVerifiedEmail(user)
     const service = await orgRepo.findServiceByAudience(audience)
     if (!service) throw AppError.of('unknown_audience')
     if (!(await orgRepo.isMember(userId, service.orgId))) {
@@ -160,9 +181,11 @@ export function createAuthService(deps: {
       }
       if (isExpired) throw AppError.of('invalid_refresh_token')
       // A deleted subject's surviving tokens mint nothing.
-      if (!(await subjectExists(existing.userId))) {
-        throw AppError.of('invalid_refresh_token')
-      }
+      const subject = await userRepo.findById(existing.userId)
+      if (!subject) throw AppError.of('invalid_refresh_token')
+      // Before rotating: a refused refresh leaves the presented token as it
+      // was, usable again once the address is verified.
+      requireVerifiedEmail(subject)
 
       const service = await orgRepo.findServiceById(existing.appServiceId)
       if (!service) throw AppError.of('invalid_refresh_token')
@@ -362,6 +385,7 @@ export function createAuthService(deps: {
       if (!user || !user.passwordHash || !passwordOk) {
         throw AppError.of('invalid_credentials')
       }
+      requireVerifiedEmail(user)
       return createSession(user.id)
     },
     async exchangeAuthorizationCode(input: {

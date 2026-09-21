@@ -1,7 +1,11 @@
 import { createApp } from './app.ts'
 import { createDeps } from './deps.ts'
 import { createDb } from './db/client.ts'
-import { insecureGoogleRedirectWarning, loadConfig } from './config.ts'
+import {
+  insecureGoogleRedirectWarning,
+  loadConfig,
+  unverifiableEmailWarning,
+} from './config.ts'
 import { createLogger } from './lib/logger.ts'
 
 const config = loadConfig(Deno.env.toObject())
@@ -25,6 +29,12 @@ const googleRedirectWarning = insecureGoogleRedirectWarning(
   config.google.redirectUri,
 )
 if (googleRedirectWarning) createLogger(config).warn(googleRedirectWarning)
+
+const emailWarning = unverifiableEmailWarning({
+  ...config,
+  smtpHost: config.smtp.host,
+})
+if (emailWarning) createLogger(config).warn(emailWarning)
 
 const { db } = createDb(config)
 const deps = await createDeps(config, db)

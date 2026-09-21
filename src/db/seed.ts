@@ -148,6 +148,13 @@ async function seed() {
         id,
         email: adminEmail,
         passwordHash: await hashPassword(adminPassword),
+        // The operator named this address in the deploy config, which is the
+        // proof; left unverified, REQUIRE_EMAIL_VERIFICATION would lock the
+        // platform's own admin out on first boot. Only a row created HERE: an
+        // existing row with this address is adopted as-is, and if someone else
+        // registered it first, staying unverified is what keeps the gate
+        // between them and the admin role.
+        emailVerified: true,
         createdAt: now,
         updatedAt: now,
       })

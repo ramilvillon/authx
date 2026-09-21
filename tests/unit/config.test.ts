@@ -1,5 +1,9 @@
 import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
-import { insecureGoogleRedirectWarning, loadConfig } from '../../src/config.ts'
+import {
+  insecureGoogleRedirectWarning,
+  loadConfig,
+  unverifiableEmailWarning,
+} from '../../src/config.ts'
 
 const base = {
   PORT: '3000',
@@ -145,4 +149,30 @@ Deno.test('GOOGLE_BIND_REDIRECT_URI defaults to empty and is independent of the 
       .google.bindRedirectUri,
     'postmessage',
   )
+})
+
+Deno.test('REQUIRE_EMAIL_VERIFICATION is off unless set to true', () => {
+  assertEquals(loadConfig(base).requireEmailVerification, false)
+  assertEquals(
+    loadConfig({ ...base, REQUIRE_EMAIL_VERIFICATION: 'true' })
+      .requireEmailVerification,
+    true,
+  )
+})
+
+Deno.test('unverifiableEmailWarning fires only when the gate is on and no email can go out', () => {
+  const w = (
+    requireEmailVerification: boolean,
+    smtpHost: string,
+    emailLogLinks: boolean,
+  ) =>
+    unverifiableEmailWarning({
+      requireEmailVerification,
+      smtpHost,
+      emailLogLinks,
+    })
+  assertEquals(w(false, '', false), null, 'gate off')
+  assertEquals(w(true, 'smtp.example.test', false), null, 'SMTP configured')
+  assertEquals(w(true, '', true), null, 'links logged for local development')
+  assertStringIncludes(w(true, '', false) ?? '', 'REQUIRE_EMAIL_VERIFICATION')
 })
