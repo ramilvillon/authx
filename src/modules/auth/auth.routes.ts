@@ -44,6 +44,7 @@ const OAUTH_ERRORS: Partial<Record<ErrorCode, OAuthError>> = {
   invalid_refresh_token: 'invalid_grant',
   refresh_token_reuse: 'invalid_grant',
   not_org_member: 'invalid_grant',
+  email_not_verified: 'invalid_grant',
   // RFC 8707's code for an audience/resource the server does not know.
   unknown_audience: 'invalid_target',
 }
@@ -381,7 +382,18 @@ const auth = new Hono<AppEnv>()
       let login: { token: string; userId: string }
       try {
         login = await c.var.authService.loginCreateSession(f.email, f.password)
-      } catch {
+      } catch (err) {
+        // Only reachable with the right password (the gate runs after it), so
+        // saying so reveals nothing to someone who does not already know it.
+        if (err instanceof AppError && err.code === 'email_not_verified') {
+          return renderLogin(
+            c,
+            f,
+            'Please verify your email address before signing in. ' +
+              'Check your inbox for the link, or request a new one.',
+            403,
+          )
+        }
         return renderLogin(c, f, 'Invalid email or password', 401)
       }
       setSessionCookie(c, login.token)

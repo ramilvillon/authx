@@ -18,8 +18,11 @@ const verification = new Hono<AppEnv>()
   // purpose decides what happens, so a link can only ever do the one thing it
   // was minted for.
   .get('/confirm', validator('query', verifyQuerySchema), async (c) => {
+    let confirmed
     try {
-      await c.var.verificationService.confirm(c.req.valid('query').token)
+      confirmed = await c.var.verificationService.confirm(
+        c.req.valid('query').token,
+      )
     } catch (e) {
       // A taken address is neither invalid nor expired, and the link is still
       // good -- saying "request a new one" would send the owner to re-run a
@@ -35,6 +38,22 @@ const verification = new Hono<AppEnv>()
         )
       }
       return c.html(verificationErrorPage(), 400)
+    }
+    // Confirming from the old address authorises the move but does not prove
+    // the new one, so the account is unverified again. Send the new address
+    // its link now -- without it, REQUIRE_EMAIL_VERIFICATION would lock the
+    // user out with nothing in their inbox. Best-effort, like registration:
+    // the change is already committed, and /verify-email/resend recovers a
+    // lost email.
+    if (confirmed.purpose === 'email_change') {
+      try {
+        await c.var.verificationService.startVerification(
+          confirmed.userId,
+          confirmed.email,
+        )
+      } catch (err) {
+        c.var.logger.warn({ err }, 'verification email failed to send')
+      }
     }
     return c.html(verificationSuccessPage())
   })

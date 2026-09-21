@@ -18,7 +18,7 @@ import {
   PLATFORM_PERMISSIONS,
   ROLE_ADMIN,
 } from './rbac-constants.ts'
-import { hashPassword } from '../lib/password.ts'
+import { hashPassword, verifyPassword } from '../lib/password.ts'
 
 // The password `.env.example` used to ship. A `.env` copied from that template
 // would seed a platform admin whose password is public, so refuse it.
@@ -39,6 +39,20 @@ export function bootstrapAdminFromEnv(
     )
   }
   return { email, password }
+}
+
+// What step 5 does about an account that may already hold BOOTSTRAP_ADMIN_EMAIL.
+// Adopting ANY such row used to make whoever registered the address first the
+// platform admin, with their own password. An existing account is adopted only
+// when it is already platform admin (the seed's own admin on a re-run, even
+// after its password was changed through the API) or when the operator knows
+// its password (they registered first, then pointed the seed at themselves).
+export function bootstrapAdminAction(
+  existing: { hasAdminRole: boolean; passwordMatches: boolean } | null,
+): 'create' | 'adopt' | 'refuse' {
+  if (!existing) return 'create'
+  if (existing.hasAdminRole || existing.passwordMatches) return 'adopt'
+  return 'refuse'
 }
 
 // Idempotent: find-or-insert each row so re-running is safe.
@@ -139,15 +153,46 @@ async function seed() {
   // 5. bootstrap admin user from env (optional)
   if (admin) {
     const { email: adminEmail, password: adminPassword } = admin
-    let user = await db.query.users.findFirst({
+    const found = await db.query.users.findFirst({
       where: eq(users.email, adminEmail),
     })
+    const action = bootstrapAdminAction(
+      found
+        ? {
+          hasAdminRole: !!(await db.query.userRoles.findFirst({
+            where: (ur, { and, eq }) =>
+              and(eq(ur.userId, found.id), eq(ur.roleId, role.id)),
+          })),
+          passwordMatches: found.passwordHash !== null &&
+            await verifyPassword(adminPassword, found.passwordHash),
+        }
+        : null,
+    )
+    if (action === 'refuse') {
+      await pool.end()
+      throw new Error(
+        `An account with BOOTSTRAP_ADMIN_EMAIL (${adminEmail}) already exists, ` +
+          'is not a platform admin, and BOOTSTRAP_ADMIN_PASSWORD does not match ' +
+          'its password -- so the seed did not create it and cannot tell it ' +
+          'belongs to you. Refusing to make it platform admin. If it is yours, ' +
+          'set BOOTSTRAP_ADMIN_PASSWORD to its password; otherwise choose a ' +
+          'different BOOTSTRAP_ADMIN_EMAIL.',
+      )
+    }
+    let user = found
+    // 'create' is exactly the no-account case; keyed on `user` so it narrows.
     if (!user) {
       const id = crypto.randomUUID()
       await db.insert(users).values({
         id,
         email: adminEmail,
         passwordHash: await hashPassword(adminPassword),
+        // The operator named this address in the deploy config, which is the
+        // proof; left unverified, REQUIRE_EMAIL_VERIFICATION would lock the
+        // platform's own admin out on first boot. Only a row created HERE: an
+        // adopted row keeps the state it had, because knowing its password
+        // proves control of the account, not of the inbox.
+        emailVerified: true,
         createdAt: now,
         updatedAt: now,
       })
