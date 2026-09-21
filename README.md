@@ -249,7 +249,10 @@ rejected with 400 `invalid_request`.
 
 `/oauth/token` and `/oauth/revoke` follow RFC 6749: they take
 `application/x-www-form-urlencoded` bodies (what OAuth client libraries send),
-and also accept JSON. Their errors use the RFC's flat shape rather than the
+and also accept JSON. A confidential client authenticates with HTTP Basic
+(`client_secret_basic`, `Authorization: Basic base64(client_id:client_secret)`)
+or with `client_id` + `client_secret` in the body (`client_secret_post`) — one
+or the other, never both. Their errors use the RFC's flat shape rather than the
 envelope under [Errors](#errors), and token responses carry
 `Cache-Control: no-store`.
 
@@ -423,9 +426,8 @@ elapses.
 ### M2M (client_credentials)
 
 ```bash
-curl -X POST localhost:3000/oauth/token \
-  -d grant_type=client_credentials -d client_id=<cid> -d client_secret=<secret> \
-  -d audience=<target-audience>
+curl -X POST localhost:3000/oauth/token -u '<cid>:<secret>' \
+  -d grant_type=client_credentials -d audience=<target-audience>
 ```
 
 ## Errors
@@ -460,7 +462,7 @@ section 5.2 defines, because OAuth client libraries parse `error` as a string:
 | `unsupported_grant_type` | 400    | `grant_type` is not `password`, `refresh_token`, `authorization_code` or `client_credentials`                                    |
 | `invalid_grant`          | 400    | wrong credentials; an unknown, expired, revoked or replayed refresh token or code; the user is not a member of the service's org |
 | `invalid_target`         | 400    | the `audience` names no service (RFC 8707)                                                                                       |
-| `invalid_client`         | 401    | client authentication failed                                                                                                     |
+| `invalid_client`         | 401    | client authentication failed; carries `WWW-Authenticate: Basic` when the client used HTTP Basic                                  |
 
 `error_description` carries the catalogue message, so the specific reason (for
 example reuse detection) stays readable. Branch on `error`.

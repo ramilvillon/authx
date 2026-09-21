@@ -49,10 +49,15 @@ const OAUTH_ERRORS: Partial<Record<ErrorCode, OAuthError>> = {
   unknown_audience: 'invalid_target',
 }
 
-function oauthError(c: Context, err: unknown): Response {
+function oauthError(c: Context, err: unknown, usedBasic = false): Response {
   if (!(err instanceof AppError)) throw err
   const error = OAUTH_ERRORS[err.code]
   if (!error) throw err
+  // Section 5.2: a client that authenticated with the Authorization header
+  // gets a challenge for the same scheme when that authentication fails.
+  if (error === 'invalid_client' && usedBasic) {
+    c.header('WWW-Authenticate', 'Basic realm="authx"')
+  }
   // 400 for everything except a failed client authentication (section 5.2).
   // The catalogue message rides along as the description, so the specific
   // reason stays readable without adding anything a caller could not already
@@ -81,11 +86,10 @@ async function readParams(c: Context): Promise<unknown> {
 // Replaces validator('json'): its failure response is a raw zod dump, which is
 // neither an RFC error nor something to show a client (it describes the
 // internal schema).
-async function parseParams<S extends z.ZodTypeAny>(
-  c: Context,
+function parseParams<S extends z.ZodTypeAny>(
+  raw: unknown,
   schema: S,
-): Promise<z.infer<S>> {
-  const raw = await readParams(c)
+): z.infer<S> {
   const parsed = schema.safeParse(raw)
   if (parsed.success) return parsed.data
   // A grant_type that is present but not one of ours has its own RFC code; a
@@ -103,6 +107,56 @@ async function parseParams<S extends z.ZodTypeAny>(
     'invalid_request',
     at ? `invalid or missing parameter: ${at}` : undefined,
   )
+}
+
+// RFC 6749 section 2.3.1, client_secret_basic. Each half is form-urlencoded
+// BEFORE the base64 step, so it is form-decoded after. undefined means the
+// request carries no Basic header; a malformed one is a failed client
+// authentication, not a malformed request.
+function basicCredentials(
+  header: string | undefined,
+): { id: string; secret: string } | undefined {
+  const match = /^basic(?:\s+(.*))?$/i.exec(header ?? '')
+  if (!match) return undefined
+  try {
+    const pair = atob(match[1] ?? '')
+    const colon = pair.indexOf(':')
+    if (colon < 0) throw new Error('no colon')
+    const form = (v: string) => decodeURIComponent(v.replaceAll('+', ' '))
+    return {
+      id: form(pair.slice(0, colon)),
+      secret: form(pair.slice(colon + 1)),
+    }
+  } catch {
+    throw AppError.of('invalid_client')
+  }
+}
+
+// Folds Basic credentials into the body parameters, so the grants that
+// authenticate a client read them exactly as they would client_secret_post.
+// Grants that do not authenticate a client (password, refresh_token) drop
+// them at the schema -- openid-client sends them on every request, so
+// ignoring beats refusing.
+function withBasic(
+  raw: unknown,
+  basic: { id: string; secret: string } | undefined,
+): unknown {
+  if (!basic || typeof raw !== 'object' || raw === null) return raw
+  const params = raw as Record<string, unknown>
+  // Section 2.3.1: a client MUST NOT use more than one method per request.
+  if (params.client_secret !== undefined) {
+    throw AppError.of(
+      'invalid_request',
+      'more than one client authentication method: Basic and client_secret',
+    )
+  }
+  if (params.client_id !== undefined && params.client_id !== basic.id) {
+    throw AppError.of(
+      'invalid_request',
+      'client_id does not match the Authorization header',
+    )
+  }
+  return { ...params, client_id: basic.id, client_secret: basic.secret }
 }
 
 // Documents what parseParams accepts. There is no validator left for
@@ -275,7 +329,9 @@ const auth = new Hono<AppEnv>()
           content: json(resolver(oauthErrorSchema)),
         },
         401: {
-          description: 'RFC 6749 error: invalid_client',
+          description: 'RFC 6749 error: invalid_client. Carries ' +
+            '`WWW-Authenticate: Basic` when the client authenticated with ' +
+            'HTTP Basic (client_secret_basic).',
           content: json(resolver(oauthErrorSchema)),
         },
       },
@@ -285,13 +341,21 @@ const auth = new Hono<AppEnv>()
       // can throw, so the error responses carry it too.
       c.header('Cache-Control', 'no-store')
       c.header('Pragma', 'no-cache')
+      const authorization = c.req.header('authorization')
+      // Decided before parsing, so a malformed Basic header still earns the
+      // challenge on its invalid_client.
+      const usedBasic = /^basic\b/i.test(authorization ?? '')
       try {
+        const params = withBasic(
+          await readParams(c),
+          basicCredentials(authorization),
+        )
         return c.json(
-          await grant(c, await parseParams(c, tokenRequestSchema)),
+          await grant(c, parseParams(params, tokenRequestSchema)),
           200,
         )
       } catch (err) {
-        return oauthError(c, err)
+        return oauthError(c, err, usedBasic)
       }
     },
   )
@@ -311,7 +375,10 @@ const auth = new Hono<AppEnv>()
     }),
     async (c) => {
       try {
-        const { refresh_token } = await parseParams(c, revokeSchema)
+        const { refresh_token } = parseParams(
+          await readParams(c),
+          revokeSchema,
+        )
         await c.var.authService.revoke(refresh_token)
         return c.body(null, 204)
       } catch (err) {
