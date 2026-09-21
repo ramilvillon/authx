@@ -44,10 +44,13 @@ function decodeIdToken(idToken: string): Record<string, unknown> {
 // exact URI -- so this is a caller's decision, taken from configuration
 // (GOOGLE_BIND_REDIRECT_URI), not a constant this function picks.
 //
-// Nothing here can prove which value is right: only Google accepts or rejects
-// the exchange, and the test stub asserts what we send, never what Google
-// makes of it. Keeping it configurable is what makes a wrong answer a config
-// change instead of a code change.
+// The omitted default was verified against live Google on 2026-09-21: a real
+// iOS GoogleSignIn server auth code, redeemed with no redirect_uri, bound
+// successfully. The test stub still asserts only what we send, never what
+// Google makes of it -- so a change to the default needs a real code again,
+// not a green suite. The other two answers have never met Google; keeping
+// this configurable is what makes a wrong one a config change instead of a
+// code change.
 export async function exchangeGoogleAuthCode(
   code: string,
   cfg: { clientId: string; clientSecret: string; redirectUri?: string },

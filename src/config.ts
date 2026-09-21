@@ -70,10 +70,11 @@ const schema = z.object({
   //   <a URL>      -> a client that did carry a redirect URI on the
   //                   authorization request; it must match exactly.
   //
-  // It is configuration rather than a constant because the right answer cannot
-  // be proven from here -- only Google can accept or reject the exchange, and
-  // no test can stand in for that. Getting it wrong is then a config change,
-  // not a code change and a deploy. See GOOGLE_REDIRECT_URI for the separate
+  // The default (omit) was verified against live Google on 2026-09-21 with a
+  // real iOS SDK code. The other two answers have not been, and no test can
+  // stand in for Google accepting or rejecting the exchange -- so this stays
+  // configuration rather than a constant, and getting it wrong is a config
+  // change, not a code change and a deploy. See GOOGLE_REDIRECT_URI for the separate
   // browser-redirect leg, which is unrelated to this one.
   // ponytail: unset and empty both mean "omit". If a client ever needs a
   // literal empty redirect_uri on the wire, that is a fourth state and wants a
