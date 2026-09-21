@@ -31,6 +31,19 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
 
 export const revokeSchema = z.object({ refresh_token: z.string().min(1) })
 
+// RFC 6749 section 5.2. Only the token endpoints speak this shape; the rest of
+// the API keeps the catalogue's {error: {code, message}}.
+export const oauthErrorSchema = z.object({
+  error: z.enum([
+    'invalid_request',
+    'invalid_client',
+    'invalid_grant',
+    'unsupported_grant_type',
+    'invalid_target',
+  ]),
+  error_description: z.string(),
+})
+
 export const tokenPairSchema = z.object({
   access_token: z.string(),
   refresh_token: z.string(),

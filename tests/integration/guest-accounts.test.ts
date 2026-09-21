@@ -53,7 +53,7 @@ Deno.test('a username and password exchange for a token', async () => {
   assertEquals(claims.sub, user.id)
 })
 
-Deno.test('a wrong password against a real username is still 401', async () => {
+Deno.test('a wrong password against a real username is invalid_grant', async () => {
   const ctx = makeTestApp()
   const { audience } = await seedGuestRow(ctx, 'guest_wrong', 'pw-secret')
   const res = await grant(ctx.app, {
@@ -62,10 +62,12 @@ Deno.test('a wrong password against a real username is still 401', async () => {
     password: 'not-it',
     audience,
   })
-  assertEquals(res.status, 401)
+  // RFC 6749 section 5.2: bad resource-owner credentials are a 400.
+  assertEquals(res.status, 400)
+  assertEquals((await res.json()).error, 'invalid_grant')
 })
 
-Deno.test('an unknown username is 401, not 400 -- the schema must not reject it', async () => {
+Deno.test('an unknown username is invalid_grant, not invalid_request -- the schema must not reject it', async () => {
   const ctx = makeTestApp()
   const { audience } = await seedGuestRow(ctx, 'guest_real', 'pw-secret')
   const res = await grant(ctx.app, {
@@ -74,10 +76,15 @@ Deno.test('an unknown username is 401, not 400 -- the schema must not reject it'
     password: 'pw-secret',
     audience,
   })
+  // Under RFC 6749 both a schema rejection and a failed credential check are
+  // 400, so the status can no longer tell them apart -- the error code does.
+  // invalid_grant means the lookup ran and failed; invalid_request would mean
+  // the schema refused a non-email username before any lookup.
+  assertEquals(res.status, 400)
   assertEquals(
-    res.status,
-    401,
-    'a 400 here means the zod schema still demands an email',
+    (await res.json()).error,
+    'invalid_grant',
+    'invalid_request here means the zod schema still demands an email',
   )
 })
 

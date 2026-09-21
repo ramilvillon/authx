@@ -3,16 +3,19 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { googleAuth } from '@hono/oauth-providers/google'
 import { describeRoute } from 'hono-openapi'
 import { resolver, validator } from 'hono-openapi/zod'
+import { createSchema } from 'zod-openapi'
+import type { OpenAPIV3 } from 'openapi-types'
 import type { AppEnv } from '../../deps.ts'
 import {
   authorizeFormSchema,
   authorizeQuerySchema,
+  oauthErrorSchema,
   revokeSchema,
   tokenPairSchema,
   tokenRequestSchema,
 } from './auth.schema.ts'
 import { loginPage } from './login-page.ts'
-import { AppError } from '../../lib/errors.ts'
+import { AppError, type ErrorCode } from '../../lib/errors.ts'
 import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { Context } from 'hono'
 import type { z } from 'zod'
@@ -21,7 +24,102 @@ import type { z } from 'zod'
 // that was not one of the first three, so a grant type added to the schema would
 // have been dispatched as client_credentials. `never` makes that a compile error.
 function unsupportedGrant(_: never): never {
-  throw AppError.of('invalid_grant')
+  throw AppError.of('unsupported_grant_type')
+}
+
+type OAuthError = z.infer<typeof oauthErrorSchema>['error']
+
+// Catalogue code -> RFC 6749 section 5.2 code, for the token endpoints only.
+// Allow-list: a catalogue code with no entry here is rethrown to app.onError
+// and rendered the old way -- visibly wrong, rather than silently relabelled
+// with a guessed RFC code.
+const OAUTH_ERRORS: Partial<Record<ErrorCode, OAuthError>> = {
+  invalid_request: 'invalid_request',
+  invalid_client: 'invalid_client',
+  unsupported_grant_type: 'unsupported_grant_type',
+  // Credentials, a refresh token, or the grant itself is bad, expired, revoked,
+  // replayed, or not usable by this subject: RFC 6749 has one code for all.
+  invalid_grant: 'invalid_grant',
+  invalid_credentials: 'invalid_grant',
+  invalid_refresh_token: 'invalid_grant',
+  refresh_token_reuse: 'invalid_grant',
+  not_org_member: 'invalid_grant',
+  // RFC 8707's code for an audience/resource the server does not know.
+  unknown_audience: 'invalid_target',
+}
+
+function oauthError(c: Context, err: unknown): Response {
+  if (!(err instanceof AppError)) throw err
+  const error = OAUTH_ERRORS[err.code]
+  if (!error) throw err
+  // 400 for everything except a failed client authentication (section 5.2).
+  // The catalogue message rides along as the description, so the specific
+  // reason stays readable without adding anything a caller could not already
+  // see.
+  return c.json(
+    { error, error_description: err.message },
+    error === 'invalid_client' ? 401 : 400,
+  )
+}
+
+// RFC 6749 section 3.2: the token endpoints take application/x-www-form-
+// urlencoded, which is what every standard OAuth client library sends. JSON is
+// accepted too: every caller written before form support sends it, and the RFC
+// does not forbid a server understanding more. Anything else reads as no body.
+async function readParams(c: Context): Promise<unknown> {
+  const type = (c.req.header('content-type') ?? '').toLowerCase()
+  if (type.startsWith('application/x-www-form-urlencoded')) {
+    return Object.fromEntries(new URLSearchParams(await c.req.text()))
+  }
+  if (type.startsWith('application/json')) {
+    return await c.req.json().catch(() => undefined)
+  }
+  return undefined
+}
+
+// Replaces validator('json'): its failure response is a raw zod dump, which is
+// neither an RFC error nor something to show a client (it describes the
+// internal schema).
+async function parseParams<S extends z.ZodTypeAny>(
+  c: Context,
+  schema: S,
+): Promise<z.infer<S>> {
+  const raw = await readParams(c)
+  const parsed = schema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  // A grant_type that is present but not one of ours has its own RFC code; a
+  // missing one is just a malformed request.
+  const grant = (raw as { grant_type?: unknown } | null | undefined)
+    ?.grant_type
+  if (
+    typeof grant === 'string' &&
+    parsed.error.issues.some((i: z.ZodIssue) => i.path[0] === 'grant_type')
+  ) {
+    throw AppError.of('unsupported_grant_type')
+  }
+  const at = parsed.error.issues[0]?.path.join('.')
+  throw AppError.of(
+    'invalid_request',
+    at ? `invalid or missing parameter: ${at}` : undefined,
+  )
+}
+
+// Documents what parseParams accepts. There is no validator left for
+// hono-openapi to derive the request body from, and describeRoute's
+// requestBody takes a plain schema rather than a resolver, so zod-openapi (an
+// existing dependency) converts it up front.
+function oauthParams(schema: z.ZodTypeAny): OpenAPIV3.RequestBodyObject {
+  // zod-openapi types its output as an OpenAPI 3.1 schema, hono-openapi wants
+  // openapi-types' 3.0 one; the value is plain JSON Schema either way and is
+  // only ever serialised into /openapi.
+  const body = createSchema(schema).schema as OpenAPIV3.SchemaObject
+  return {
+    required: true,
+    content: {
+      'application/x-www-form-urlencoded': { schema: body },
+      'application/json': { schema: body },
+    },
+  }
 }
 
 const json = (schema: ReturnType<typeof resolver>) => ({
@@ -134,45 +232,66 @@ function redirectTo(
   return u.toString()
 }
 
+function grant(c: Context<AppEnv>, body: z.infer<typeof tokenRequestSchema>) {
+  const svc = c.var.authService
+  return body.grant_type === 'password'
+    ? svc.passwordGrant(body.username, body.password, body.audience)
+    : body.grant_type === 'refresh_token'
+    ? svc.refreshGrant(body.refresh_token)
+    : body.grant_type === 'authorization_code'
+    ? svc.exchangeAuthorizationCode({
+      code: body.code,
+      redirectUri: body.redirect_uri,
+      codeVerifier: body.code_verifier,
+      clientId: body.client_id,
+      clientSecret: body.client_secret,
+    })
+    : body.grant_type === 'client_credentials'
+    ? svc.clientCredentialsGrant(
+      body.client_id,
+      body.client_secret,
+      body.audience,
+    )
+    : unsupportedGrant(body)
+}
+
 const auth = new Hono<AppEnv>()
   .post(
     '/token',
     describeRoute({
       tags: ['Auth'],
-      summary: 'Issue tokens (password or refresh_token grant)',
+      summary:
+        'Issue tokens (password, refresh_token, authorization_code or client_credentials grant)',
+      requestBody: oauthParams(tokenRequestSchema),
       responses: {
         200: {
           description: 'A new access/refresh token pair',
           content: json(resolver(tokenPairSchema)),
         },
-        400: { description: 'Invalid request body' },
-        401: { description: 'Invalid credentials or refresh token' },
+        400: {
+          description: 'RFC 6749 error: invalid_request, invalid_grant, ' +
+            'unsupported_grant_type or invalid_target',
+          content: json(resolver(oauthErrorSchema)),
+        },
+        401: {
+          description: 'RFC 6749 error: invalid_client',
+          content: json(resolver(oauthErrorSchema)),
+        },
       },
     }),
-    validator('json', tokenRequestSchema),
     async (c) => {
-      const body = c.req.valid('json')
-      const svc = c.var.authService
-      const pair = body.grant_type === 'password'
-        ? await svc.passwordGrant(body.username, body.password, body.audience)
-        : body.grant_type === 'refresh_token'
-        ? await svc.refreshGrant(body.refresh_token)
-        : body.grant_type === 'authorization_code'
-        ? await svc.exchangeAuthorizationCode({
-          code: body.code,
-          redirectUri: body.redirect_uri,
-          codeVerifier: body.code_verifier,
-          clientId: body.client_id,
-          clientSecret: body.client_secret,
-        })
-        : body.grant_type === 'client_credentials'
-        ? await svc.clientCredentialsGrant(
-          body.client_id,
-          body.client_secret,
-          body.audience,
+      // Section 5.1: token responses must not be cached. Set before anything
+      // can throw, so the error responses carry it too.
+      c.header('Cache-Control', 'no-store')
+      c.header('Pragma', 'no-cache')
+      try {
+        return c.json(
+          await grant(c, await parseParams(c, tokenRequestSchema)),
+          200,
         )
-        : unsupportedGrant(body)
-      return c.json(pair, 200)
+      } catch (err) {
+        return oauthError(c, err)
+      }
     },
   )
   .post(
@@ -180,15 +299,23 @@ const auth = new Hono<AppEnv>()
     describeRoute({
       tags: ['Auth'],
       summary: 'Revoke a refresh token',
+      requestBody: oauthParams(revokeSchema),
       responses: {
         204: { description: 'Revoked (idempotent)' },
-        400: { description: 'Invalid request body' },
+        400: {
+          description: 'RFC 6749 error: invalid_request',
+          content: json(resolver(oauthErrorSchema)),
+        },
       },
     }),
-    validator('json', revokeSchema),
     async (c) => {
-      await c.var.authService.revoke(c.req.valid('json').refresh_token)
-      return c.body(null, 204)
+      try {
+        const { refresh_token } = await parseParams(c, revokeSchema)
+        await c.var.authService.revoke(refresh_token)
+        return c.body(null, 204)
+      } catch (err) {
+        return oauthError(c, err)
+      }
     },
   )
   .get(

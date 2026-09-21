@@ -245,7 +245,13 @@ surface:
 `POST /oauth/token` requires an `audience` (a service's `audience` string) on
 the password and client_credentials grants; the returned access token carries
 exactly the permissions that user has in that service. A request without it is
-rejected with 400.
+rejected with 400 `invalid_request`.
+
+`/oauth/token` and `/oauth/revoke` follow RFC 6749: they take
+`application/x-www-form-urlencoded` bodies (what OAuth client libraries send),
+and also accept JSON. Their errors use the RFC's flat shape rather than the
+envelope under [Errors](#errors), and token responses carry
+`Cache-Control: no-store`.
 
 Permission keys are defined per service, so the `users:*` permissions above
 count only on a token minted for the reserved `platform` audience — the same key
@@ -336,10 +342,10 @@ Example password-grant flow (`username` accepts a registered user's email or a
 guest's generated username):
 
 ```bash
-# obtain a token pair
+# obtain a token pair (form-encoded, as RFC 6749 specifies; JSON also works)
 curl -X POST localhost:3000/oauth/token \
-  -H 'content-type: application/json' \
-  -d '{"grant_type":"password","username":"a@b.com","password":"pw123456","audience":"platform"}'
+  -d grant_type=password -d username=a@b.com -d password=pw123456 \
+  -d audience=platform
 
 # call a protected route
 curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
@@ -358,12 +364,11 @@ curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
 
 ```bash
 curl -X POST localhost:3000/oauth/token \
-  -H 'content-type: application/json' \
-  -d '{"grant_type":"authorization_code","code":"<code>","redirect_uri":"<uri>","code_verifier":"<verifier>","client_id":"<client_id>"}'
+  -d grant_type=authorization_code -d code=<code> -d redirect_uri=<uri> \
+  -d code_verifier=<verifier> -d client_id=<client_id>
 ```
 
-Confidential clients also send `"client_secret":"…"`. Only PKCE `S256` is
-supported.
+Confidential clients also send `client_secret`. Only PKCE `S256` is supported.
 
 ### OIDC
 
@@ -419,13 +424,13 @@ elapses.
 
 ```bash
 curl -X POST localhost:3000/oauth/token \
-  -H 'content-type: application/json' \
-  -d '{"grant_type":"client_credentials","client_id":"<cid>","client_secret":"<secret>","audience":"<target-audience>"}'
+  -d grant_type=client_credentials -d client_id=<cid> -d client_secret=<secret> \
+  -d audience=<target-audience>
 ```
 
 ## Errors
 
-All error responses use a consistent envelope:
+Every endpoint except the two token endpoints (below) uses one envelope:
 
 ```json
 { "error": { "code": "<machine_code>", "message": "..." } }
@@ -436,6 +441,29 @@ is a stable machine-readable identifier from the catalogue in
 `src/lib/errors.ts` (e.g. `invalid_grant`, `user_not_found`, `email_taken`).
 Clients should branch on `code`, not on the human-readable `message` — messages
 may be revised without a version bump; codes are stable.
+
+### Token endpoint errors (RFC 6749)
+
+`POST /oauth/token` and `POST /oauth/revoke` answer in the flat shape RFC 6749
+section 5.2 defines, because OAuth client libraries parse `error` as a string:
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "refresh token reuse detected"
+}
+```
+
+| `error`                  | status | when                                                                                                                             |
+| ------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_request`        | 400    | a parameter is missing or malformed, or the body is neither form-encoded nor JSON                                                |
+| `unsupported_grant_type` | 400    | `grant_type` is not `password`, `refresh_token`, `authorization_code` or `client_credentials`                                    |
+| `invalid_grant`          | 400    | wrong credentials; an unknown, expired, revoked or replayed refresh token or code; the user is not a member of the service's org |
+| `invalid_target`         | 400    | the `audience` names no service (RFC 8707)                                                                                       |
+| `invalid_client`         | 401    | client authentication failed                                                                                                     |
+
+`error_description` carries the catalogue message, so the specific reason (for
+example reuse detection) stays readable. Branch on `error`.
 
 ## Type-safe RPC client
 
