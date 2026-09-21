@@ -252,9 +252,11 @@ rejected with 400 `invalid_request`.
 and also accept JSON. A confidential client authenticates with HTTP Basic
 (`client_secret_basic`, `Authorization: Basic base64(client_id:client_secret)`)
 or with `client_id` + `client_secret` in the body (`client_secret_post`) — one
-or the other, never both. Their errors use the RFC's flat shape rather than the
-envelope under [Errors](#errors), and token responses carry
-`Cache-Control: no-store`.
+or the other, never both. That includes refreshing and revoking: a refresh token
+issued to a confidential client can only be used or revoked with that same
+client's credentials. Public clients send none. Their errors use the RFC's flat
+shape rather than the envelope under [Errors](#errors), and token responses
+carry `Cache-Control: no-store`.
 
 Permission keys are defined per service, so the `users:*` permissions above
 count only on a token minted for the reserved `platform` audience — the same key

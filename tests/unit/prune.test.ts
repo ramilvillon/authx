@@ -47,7 +47,11 @@ Deno.test('a dead row inside the retention window is kept, so reuse detection st
     email: 'a@b.com',
     password: 'pw123456',
   })
-  await seedDefaultService(ctx.orgRepo, user.id)
+  const audience = await seedDefaultService(ctx.orgRepo, user.id)
+  // The token must belong to a real service: refreshGrant looks the service up
+  // (to decide whether the client must authenticate) before reuse detection.
+  // The seeded one is public, so no client credentials are needed.
+  const service = (await ctx.orgRepo.findServiceByAudience(audience))!
 
   // A token that is both revoked and expired, but only recently: the exact row
   // a naive "delete what has expired" prune would remove.
@@ -55,7 +59,7 @@ Deno.test('a dead row inside the retention window is kept, so reuse detection st
   await ctx.tokenRepo.create({
     id: 'rt-stolen',
     userId: user.id,
-    appServiceId: 's1',
+    appServiceId: service.id,
     tokenHash: await hashToken(stolen),
     expiresAt: new Date(Date.now() - days(10)),
   })

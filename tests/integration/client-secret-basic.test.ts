@@ -224,10 +224,10 @@ Deno.test('a body client_id that disagrees with the Basic header is invalid_requ
   )
 })
 
-Deno.test('a refresh that carries a Basic header still works', async () => {
-  // openid-client sends client credentials on every token request, refreshes
-  // included. authx's refresh grant does not authenticate the client, so the
-  // header is ignored there rather than rejected.
+Deno.test('a refresh authenticates with HTTP Basic', async () => {
+  // The seeded service is confidential, so since client authentication on
+  // refresh (confidential-refresh-auth.test.ts) these Basic credentials are
+  // checked, not ignored.
   const ctx = makeTestApp()
   const s = await seed(ctx)
   const first = await token(ctx, {

@@ -132,11 +132,11 @@ function basicCredentials(
   }
 }
 
-// Folds Basic credentials into the body parameters, so the grants that
-// authenticate a client read them exactly as they would client_secret_post.
-// Grants that do not authenticate a client (password, refresh_token) drop
-// them at the schema -- openid-client sends them on every request, so
-// ignoring beats refusing.
+// Folds Basic credentials into the body parameters, so everything that
+// authenticates a client reads them exactly as it would client_secret_post.
+// The password grant does not authenticate a client and drops them at the
+// schema -- openid-client sends them on every request, so ignoring beats
+// refusing.
 function withBasic(
   raw: unknown,
   basic: { id: string; secret: string } | undefined,
@@ -292,7 +292,10 @@ function grant(c: Context<AppEnv>, body: z.infer<typeof tokenRequestSchema>) {
   return body.grant_type === 'password'
     ? svc.passwordGrant(body.username, body.password, body.audience)
     : body.grant_type === 'refresh_token'
-    ? svc.refreshGrant(body.refresh_token)
+    ? svc.refreshGrant(body.refresh_token, {
+      id: body.client_id,
+      secret: body.client_secret,
+    })
     : body.grant_type === 'authorization_code'
     ? svc.exchangeAuthorizationCode({
       code: body.code,
@@ -371,18 +374,28 @@ const auth = new Hono<AppEnv>()
           description: 'RFC 6749 error: invalid_request',
           content: json(resolver(oauthErrorSchema)),
         },
+        401: {
+          description: 'RFC 6749 error: invalid_client -- a confidential ' +
+            "client's token needs that client's credentials",
+          content: json(resolver(oauthErrorSchema)),
+        },
       },
     }),
     async (c) => {
+      const authorization = c.req.header('authorization')
+      const usedBasic = /^basic\b/i.test(authorization ?? '')
       try {
-        const { refresh_token } = parseParams(
-          await readParams(c),
+        const params = parseParams(
+          withBasic(await readParams(c), basicCredentials(authorization)),
           revokeSchema,
         )
-        await c.var.authService.revoke(refresh_token)
+        await c.var.authService.revoke(params.refresh_token, {
+          id: params.client_id,
+          secret: params.client_secret,
+        })
         return c.body(null, 204)
       } catch (err) {
-        return oauthError(c, err)
+        return oauthError(c, err, usedBasic)
       }
     },
   )
