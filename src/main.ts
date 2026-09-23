@@ -4,6 +4,7 @@ import { createDb } from './db/client.ts'
 import {
   insecureGoogleRedirectWarning,
   loadConfig,
+  passwordGrantWarning,
   unverifiableEmailWarning,
 } from './config.ts'
 import { createLogger } from './lib/logger.ts'
@@ -35,6 +36,9 @@ const emailWarning = unverifiableEmailWarning({
   smtpHost: config.smtp.host,
 })
 if (emailWarning) createLogger(config).warn(emailWarning)
+
+const grantWarning = passwordGrantWarning(config.allowPasswordGrant)
+if (grantWarning) createLogger(config).warn(grantWarning)
 
 const { db } = createDb(config)
 const deps = await createDeps(config, db)

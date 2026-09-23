@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
 import {
   insecureGoogleRedirectWarning,
   loadConfig,
+  passwordGrantWarning,
   unverifiableEmailWarning,
 } from '../../src/config.ts'
 
@@ -175,4 +176,14 @@ Deno.test('unverifiableEmailWarning fires only when the gate is on and no email 
   assertEquals(w(true, 'smtp.example.test', false), null, 'SMTP configured')
   assertEquals(w(true, '', true), null, 'links logged for local development')
   assertStringIncludes(w(true, '', false) ?? '', 'REQUIRE_EMAIL_VERIFICATION')
+})
+
+Deno.test('ALLOW_PASSWORD_GRANT is on unless set to false, and warns while on', () => {
+  assertEquals(loadConfig(base).allowPasswordGrant, true)
+  assertEquals(
+    loadConfig({ ...base, ALLOW_PASSWORD_GRANT: 'false' }).allowPasswordGrant,
+    false,
+  )
+  assertStringIncludes(passwordGrantWarning(true) ?? '', 'RFC 9700')
+  assertEquals(passwordGrantWarning(false), null)
 })

@@ -34,6 +34,8 @@ export function createUserService(deps: {
   verificationRepo: VerificationTokenRepository
   socialRepo: SocialAccountRepository
   orgRepo: OrgRepository
+  // Guests sign in only through the password grant.
+  allowPasswordGrant: boolean
 }) {
   const {
     repo,
@@ -43,6 +45,7 @@ export function createUserService(deps: {
     verificationRepo,
     socialRepo,
     orgRepo,
+    allowPasswordGrant,
   } = deps
   return {
     async register(input: RegisterInput): Promise<PublicUser> {
@@ -76,7 +79,8 @@ export function createUserService(deps: {
       const service = await orgRepo.findServiceByClientId(clientId)
       // Same 404 for "no such client" and "not opted in" -- neither should be
       // probeable.
-      if (!service || service.guestsEnabled !== true) {
+      // With the password grant off, the credentials could never sign in.
+      if (!allowPasswordGrant || !service || service.guestsEnabled !== true) {
         throw AppError.of('guest_accounts_disabled')
       }
       // generateRefreshToken is not refresh-specific: 32 random bytes, hex

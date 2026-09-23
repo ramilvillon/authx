@@ -178,6 +178,13 @@ db:seed` creates that user as a platform `admin`. Both are empty in
 still the `change-me-please` placeholder older templates shipped. Get an admin
 token with a password grant for `audience: "platform"`.
 
+The password grant is on by default for compatibility, but RFC 9700 (the OAuth
+2.0 Security BCP) says it MUST NOT be used: the client handles the user's
+password, and there is no page on which to add MFA or consent. New clients
+should use the authorization code flow with PKCE. `ALLOW_PASSWORD_GRANT=false`
+refuses it with `unsupported_grant_type` and drops it from discovery; a future
+release makes that the default.
+
 Example password-grant flow (`username` accepts a registered user's email or a
 guest's generated username):
 

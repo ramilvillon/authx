@@ -12,7 +12,7 @@ const wellknown = new Hono<AppEnv>()
       authorization_endpoint: `${iss}/oauth/authorize`,
       id_token_signing_alg_values_supported: ['RS256'],
       grant_types_supported: [
-        'password',
+        ...(c.var.config.allowPasswordGrant ? ['password'] : []),
         'refresh_token',
         'authorization_code',
         'client_credentials',

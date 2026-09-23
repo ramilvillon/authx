@@ -36,6 +36,7 @@ function fullService() {
       verificationRepo,
       socialRepo,
       orgRepo,
+      allowPasswordGrant: true,
     }),
   }
 }
@@ -55,6 +56,7 @@ function service(repo = createInMemoryUserRepository({ user: [] })) {
       verificationRepo: createInMemoryVerificationTokenRepository(),
       socialRepo: createInMemorySocialAccountRepository(),
       orgRepo: createInMemoryOrgRepository(),
+      allowPasswordGrant: true,
     }),
   }
 }

@@ -221,6 +221,11 @@ export function createAuthService(deps: {
       password: string,
       audience: string,
     ): Promise<TokenPair> {
+      // Before the lookup: a disabled grant must not count toward the login
+      // throttle or cost a bcrypt compare.
+      if (!config.allowPasswordGrant) {
+        throw AppError.of('unsupported_grant_type')
+      }
       // An email or a generated username. Generated usernames never contain
       // '@', so the test is unambiguous in both directions.
       // The lookup is the only thing that branches; everything after it is

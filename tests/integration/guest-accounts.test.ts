@@ -185,6 +185,15 @@ Deno.test('a service that has not opted in refuses', async () => {
   assertEquals((await res.json()).error.code, 'guest_accounts_disabled')
 })
 
+// Credentials that could never sign in are worse than a refusal.
+Deno.test('guest creation refuses while the password grant is off', async () => {
+  const ctx = makeTestApp({ ALLOW_PASSWORD_GRANT: 'false' })
+  await seedGuestService(ctx, true)
+  const res = await createGuest(ctx.app)
+  assertEquals(res.status, 404)
+  assertEquals((await res.json()).error.code, 'guest_accounts_disabled')
+})
+
 Deno.test('an unknown client_id refuses', async () => {
   const ctx = makeTestApp()
   await seedGuestService(ctx, true)
