@@ -369,7 +369,9 @@ const auth = new Hono<AppEnv>()
       summary: 'Revoke a refresh token',
       requestBody: oauthParams(revokeSchema),
       responses: {
-        204: { description: 'Revoked (idempotent)' },
+        // RFC 7009 section 2.2 requires 200 here. A 204 is what authx sent
+        // until an openid-client run proved standard libraries reject it.
+        200: { description: 'Revoked (idempotent), empty body' },
         400: {
           description: 'RFC 6749 error: invalid_request',
           content: json(resolver(oauthErrorSchema)),
@@ -389,11 +391,14 @@ const auth = new Hono<AppEnv>()
           withBasic(await readParams(c), basicCredentials(authorization)),
           revokeSchema,
         )
-        await c.var.authService.revoke(params.refresh_token, {
-          id: params.client_id,
-          secret: params.client_secret,
-        })
-        return c.body(null, 204)
+        await c.var.authService.revoke(
+          (params.token ?? params.refresh_token)!,
+          {
+            id: params.client_id,
+            secret: params.client_secret,
+          },
+        )
+        return c.body(null, 200)
       } catch (err) {
         return oauthError(c, err, usedBasic)
       }

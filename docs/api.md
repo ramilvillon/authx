@@ -33,6 +33,12 @@ the password and client_credentials grants; the returned access token carries
 exactly the permissions that user has in that service. A request without it is
 rejected with 400 `invalid_request`.
 
+`/oauth/revoke` follows RFC 7009: the token goes in the **`token`** parameter
+(`refresh_token` is still accepted), `token_type_hint` is accepted and ignored,
+and success is **200** with an empty body — including for a token that is
+unknown, already expired or already revoked, since the state the caller asked
+for already holds.
+
 `/oauth/token` and `/oauth/revoke` follow RFC 6749: they take
 `application/x-www-form-urlencoded` bodies (what OAuth client libraries send),
 and also accept JSON. A confidential client authenticates with HTTP Basic

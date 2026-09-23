@@ -174,13 +174,45 @@ Deno.test('revoke accepts a form-encoded body and the token stops working', asyn
     '/oauth/revoke',
     form({ refresh_token: refresh }),
   )
-  assertEquals(revoked.status, 204)
+  assertEquals(revoked.status, 200)
 
   const reuse = await ctx.app.request(
     '/oauth/token',
     form({ grant_type: 'refresh_token', refresh_token: refresh }),
   )
   assertEquals(reuse.status, 400, 'a revoked token must not mint anything')
+})
+
+// RFC 7009 section 2.1 names the parameter `token`, with an optional
+// `token_type_hint`. authx only accepted `refresh_token`, so no standard client
+// could revoke anything -- found by driving the API with openid-client.
+Deno.test('revoke accepts the RFC 7009 `token` parameter', async () => {
+  const ctx = makeTestApp()
+  const s = await seed(ctx)
+  const refresh = await refreshTokenFor(ctx, s)
+
+  const revoked = await ctx.app.request(
+    '/oauth/revoke',
+    form({ token: refresh, token_type_hint: 'refresh_token' }),
+  )
+  assertEquals(revoked.status, 200)
+
+  const reuse = await ctx.app.request(
+    '/oauth/token',
+    form({ grant_type: 'refresh_token', refresh_token: refresh }),
+  )
+  assertEquals(reuse.status, 400, 'a revoked token must not mint anything')
+})
+
+// An unknown token is "already not valid", which is the state the caller asked
+// for. RFC 7009 section 2.2 requires a success response.
+Deno.test('revoke of an unknown token is still a success', async () => {
+  const ctx = makeTestApp()
+  await seed(ctx)
+  assertEquals(
+    (await ctx.app.request('/oauth/revoke', form({ token: 'nope' }))).status,
+    200,
+  )
 })
 
 // ---- every failure is a flat RFC 6749 section 5.2 body -----------------------
