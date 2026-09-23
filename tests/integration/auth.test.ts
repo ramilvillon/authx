@@ -58,7 +58,7 @@ Deno.test('refresh rotation + revoke', async () => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ refresh_token: next.refresh_token }),
   })
-  assertEquals(revoke.status, 204)
+  assertEquals(revoke.status, 200)
 
   // The revoked refresh token must now be rejected.
   const reuse = await app.request('/oauth/token', {

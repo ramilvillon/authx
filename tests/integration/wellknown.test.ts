@@ -30,3 +30,17 @@ Deno.test('discovery advertises OIDC endpoints, scopes, and claims', async () =>
   assert(doc.claims_supported.includes('email_verified'))
   assert(doc.claims_supported.includes('name'))
 })
+
+// Found by driving the API with openid-client: /oauth/revoke existed but was
+// never advertised, and a standard client refuses to revoke without the
+// metadata (RFC 8414) rather than guessing the path.
+Deno.test('discovery advertises the revocation endpoint and its auth methods', async () => {
+  const { app } = makeTestApp()
+  const doc = await (await app.request('/.well-known/openid-configuration'))
+    .json()
+  assertEquals(doc.revocation_endpoint, `${doc.issuer}/oauth/revoke`)
+  assertEquals(doc.revocation_endpoint_auth_methods_supported, [
+    'client_secret_basic',
+    'client_secret_post',
+  ])
+})

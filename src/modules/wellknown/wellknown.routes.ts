@@ -18,6 +18,9 @@ const wellknown = new Hono<AppEnv>()
         'client_credentials',
       ],
       userinfo_endpoint: `${iss}/oauth/userinfo`,
+      // RFC 8414. Without it a standard client will not call /oauth/revoke at
+      // all -- it refuses on the missing metadata rather than guessing a path.
+      revocation_endpoint: `${iss}/oauth/revoke`,
       response_types_supported: ['code'],
       subject_types_supported: ['public'],
       scopes_supported: ['openid', 'email', 'profile'],
@@ -37,6 +40,12 @@ const wellknown = new Hono<AppEnv>()
         'picture',
       ],
       token_endpoint_auth_methods_supported: [
+        'client_secret_basic',
+        'client_secret_post',
+      ],
+      // Same methods: since confidential clients must authenticate to revoke,
+      // a client that cannot read this would have to guess.
+      revocation_endpoint_auth_methods_supported: [
         'client_secret_basic',
         'client_secret_post',
       ],

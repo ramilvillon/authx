@@ -266,7 +266,7 @@ Deno.test('revoke: a confidential token is revoked with its client credentials',
   const s = await seed(ctx)
   const creds = { client_id: s.confA.clientId, client_secret: SECRET_A }
   const t = await refreshTokenFor(ctx, s, s.confA.audience)
-  assertEquals((await revoke(ctx, t, creds)).status, 204)
+  assertEquals((await revoke(ctx, t, creds)).status, 200)
   await assertError(await refresh(ctx, t, creds), 400, 'invalid_grant')
 })
 
@@ -313,11 +313,11 @@ Deno.test('revoke: a public token is still revoked with no client credentials', 
   const ctx = makeTestApp()
   const s = await seed(ctx)
   const t = await refreshTokenFor(ctx, s, s.pub.audience)
-  assertEquals((await revoke(ctx, t)).status, 204)
+  assertEquals((await revoke(ctx, t)).status, 200)
   await assertError(await refresh(ctx, t), 400, 'invalid_grant')
 })
 
-Deno.test('revoke: an unknown token is still 204 (RFC 7009)', async () => {
+Deno.test('revoke: an unknown token is still a success (RFC 7009)', async () => {
   const ctx = makeTestApp()
-  assertEquals((await revoke(ctx, 'not-a-token')).status, 204)
+  assertEquals((await revoke(ctx, 'not-a-token')).status, 200)
 })

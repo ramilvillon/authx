@@ -34,10 +34,20 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
 ])
 
 export const revokeSchema = z.object({
-  refresh_token: z.string().min(1),
+  // RFC 7009 section 2.1 calls this `token`, which is what OAuth client
+  // libraries send. `refresh_token` is what authx accepted before and keeps
+  // working; one of the two must be present.
+  token: z.string().min(1).optional(),
+  refresh_token: z.string().min(1).optional(),
+  // Accepted and ignored: the only token type authx revokes is a refresh
+  // token, and the RFC makes the hint optional and non-binding.
+  token_type_hint: z.string().optional(),
   // As on the refresh grant: required for a confidential client's token.
   client_id: z.string().min(1).optional(),
   client_secret: z.string().min(1).optional(),
+}).refine((v) => !!(v.token ?? v.refresh_token), {
+  message: 'token is required',
+  path: ['token'],
 })
 
 // RFC 6749 section 5.2. Only the token endpoints speak this shape; the rest of
