@@ -59,6 +59,12 @@ const schema = z.object({
   // unverifiableEmailWarning for the setting that makes this a lockout.
   REQUIRE_EMAIL_VERIFICATION: z.enum(['true', 'false']).default('false')
     .transform((v) => v === 'true'),
+  // grant_type=password at /oauth/token. On by default only because existing
+  // callers, guest accounts and the quickstart still use it; RFC 9700 says it
+  // MUST NOT be used, so main.ts warns while it is on. The default flips once
+  // the quickstart leads with the code flow.
+  ALLOW_PASSWORD_GRANT: z.enum(['true', 'false']).default('true')
+    .transform((v) => v === 'true'),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -152,6 +158,7 @@ export type Config = {
   emailVerificationTtl: number
   emailLogLinks: boolean
   requireEmailVerification: boolean
+  allowPasswordGrant: boolean
   smtp: {
     host: string
     port: number
@@ -202,6 +209,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     emailVerificationTtl: e.EMAIL_VERIFICATION_TTL,
     emailLogLinks: e.EMAIL_LOG_LINKS,
     requireEmailVerification: e.REQUIRE_EMAIL_VERIFICATION,
+    allowPasswordGrant: e.ALLOW_PASSWORD_GRANT,
     smtp: {
       host: e.SMTP_HOST,
       port: e.SMTP_PORT,
@@ -271,4 +279,15 @@ export function unverifiableEmailWarning(
   return 'REQUIRE_EMAIL_VERIFICATION is on but no verification email can be ' +
     'delivered: SMTP_HOST is empty and EMAIL_LOG_LINKS is off. Every account ' +
     'that registers now is locked out until one of them is set.'
+}
+
+export function passwordGrantWarning(
+  allowPasswordGrant: boolean,
+): string | null {
+  if (!allowPasswordGrant) return null
+  return 'ALLOW_PASSWORD_GRANT is on: /oauth/token accepts grant_type=password, ' +
+    'which RFC 9700 (OAuth 2.0 Security BCP) says MUST NOT be used. Move ' +
+    'clients to the authorization code flow with PKCE, then set ' +
+    'ALLOW_PASSWORD_GRANT=false. Guest accounts sign in with this grant and ' +
+    'stop working when it is off. A future release turns it off by default.'
 }

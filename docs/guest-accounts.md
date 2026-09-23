@@ -7,7 +7,8 @@ creates an account with a generated username and password and no email,
 returning `{ username, password }` **once** — they are not retrievable again, so
 the client stores them and re-authenticates on relaunch with
 `grant_type=password`, which accepts a `username` as well as an email in that
-field.
+field. This depends on the password grant, so guests stop working under
+`ALLOW_PASSWORD_GRANT=false` (see [configuration](configuration.md)).
 
 The account binds to Google later, while authenticated, via
 `POST /users/me/social-links`
