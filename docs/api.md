@@ -87,6 +87,23 @@ mean the account still lacks an address: a guest that binds Google has both.
 | Guest, unbound             | null            | set         |
 | Guest, after a Google bind | set             | set         |
 
+### Login throttling
+
+The global rate limiter is keyed on IP, which a password spray from many
+addresses walks past: each address stays under the limit while one account takes
+every guess. So authx also counts **consecutive failed passwords per account**
+(`LOGIN_MAX_FAILURES`, default 10). At the limit that account stops accepting
+passwords for `LOGIN_LOCKOUT_MS` (default 15 minutes), the correct one included
+— that is what makes it work. A successful login clears the count, so an account
+in daily use never accumulates its way into a lockout.
+
+A locked account answers exactly as it would for a wrong password. A distinct
+error would be an enumeration oracle: failures are only counted for accounts
+that exist, so "locked" would mean "this address is registered".
+
+**Password reset still works while an account is locked**, which is the way back
+in for someone locked out by another person's guessing.
+
 ### Password rules
 
 A password a person chooses — at registration, on a self-service change, or
