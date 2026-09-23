@@ -45,6 +45,16 @@ export const ERRORS = {
   user_not_found: { status: 404, message: 'user not found' },
   org_not_found: { status: 404, message: 'organization not found' },
   service_not_found: { status: 404, message: 'service not found' },
+  weak_password: {
+    status: 400,
+    message: 'that password is too common or too short',
+  },
+  // Separate from weak_password: the fix is different (shorten it), and the
+  // cause -- bcrypt's 72-byte ceiling -- is ours, not the caller's judgement.
+  password_too_long: {
+    status: 400,
+    message: 'password must be at most 72 bytes',
+  },
   email_taken: { status: 409, message: 'email already registered' },
   social_account_already_linked: {
     status: 409,
