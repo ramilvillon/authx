@@ -125,5 +125,26 @@ export function createAdminService(deps: {
       rbacRepo.assignRoleToUser(userId, roleId),
     assignRoleToClient: (clientAppServiceId: string, roleId: string) =>
       rbacRepo.assignRoleToClient(clientAppServiceId, roleId),
+    // Revokes take the grant as given: an unknown role, user or client leaves
+    // nothing to delete, which is the state the caller asked for.
+    revokePermission: (roleId: string, permissionId: string) =>
+      rbacRepo.revokePermissionFromRole(roleId, permissionId),
+    removeRole: (userId: string, roleId: string) =>
+      rbacRepo.removeRoleFromUser(userId, roleId),
+    removeClientRole: (clientAppServiceId: string, roleId: string) =>
+      rbacRepo.removeRoleFromClient(clientAppServiceId, roleId),
+    // The listings resolve the service first: an unknown id has no empty
+    // answer, it is a wrong id, and 404 says so.
+    async listRoles(serviceId: string) {
+      await requireService(serviceId)
+      return await rbacRepo.listRolesForService(serviceId)
+    },
+    async listPermissions(serviceId: string) {
+      await requireService(serviceId)
+      return await rbacRepo.listPermissionsForService(serviceId)
+    },
+    listUserRoles: (userId: string) => rbacRepo.rolesForUser(userId),
+    listClientRoles: (clientAppServiceId: string) =>
+      rbacRepo.rolesForClient(clientAppServiceId),
   }
 }

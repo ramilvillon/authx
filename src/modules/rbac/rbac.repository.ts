@@ -25,6 +25,23 @@ export type RbacRepository = {
     clientAppServiceId: string,
     appServiceId: string,
   ): Promise<string[]>
+  // Revokes are DELETEs on the join tables: a row that is not there is already
+  // in the wanted state, so they resolve either way rather than reporting a
+  // miss. The routes are 204 for the same reason.
+  revokePermissionFromRole(roleId: string, permissionId: string): Promise<void>
+  removeRoleFromUser(userId: string, roleId: string): Promise<void>
+  removeRoleFromClient(
+    clientAppServiceId: string,
+    roleId: string,
+  ): Promise<void>
+  listRolesForService(appServiceId: string): Promise<RoleWithPermissions[]>
+  listPermissionsForService(appServiceId: string): Promise<PermissionRecord[]>
+  rolesForUser(userId: string): Promise<RoleRecord[]>
+  rolesForClient(clientAppServiceId: string): Promise<RoleRecord[]>
+}
+
+export type RoleWithPermissions = RoleRecord & {
+  permissions: PermissionRecord[]
 }
 
 // In-memory test double. Mirror behavior in rbac.repository.drizzle.ts.
@@ -124,5 +141,50 @@ export function createInMemoryRbacRepository(): RbacRepository {
       }
       return Promise.resolve([...out])
     },
+    revokePermissionFromRole(roleId, permissionId) {
+      rolePerms.delete(`${roleId}:${permissionId}`)
+      return Promise.resolve()
+    },
+    removeRoleFromUser(userId, roleId) {
+      userRoleIds.get(userId)?.delete(roleId)
+      return Promise.resolve()
+    },
+    removeRoleFromClient(clientAppServiceId, roleId) {
+      clientRoleIds.get(clientAppServiceId)?.delete(roleId)
+      return Promise.resolve()
+    },
+    listRolesForService(appServiceId) {
+      const out = []
+      for (const role of roles.values()) {
+        if (role.appServiceId !== appServiceId) continue
+        out.push({
+          ...role,
+          permissions: [...perms.values()]
+            .filter((p) => rolePerms.has(`${role.id}:${p.id}`))
+            .map((p) => ({ ...p })),
+        })
+      }
+      return Promise.resolve(out)
+    },
+    listPermissionsForService(appServiceId) {
+      return Promise.resolve(
+        [...perms.values()]
+          .filter((p) => p.appServiceId === appServiceId)
+          .map((p) => ({ ...p })),
+      )
+    },
+    rolesForUser(userId) {
+      return Promise.resolve(rolesByIds(userRoleIds.get(userId)))
+    },
+    rolesForClient(clientAppServiceId) {
+      return Promise.resolve(rolesByIds(clientRoleIds.get(clientAppServiceId)))
+    },
+  }
+
+  function rolesByIds(ids: Set<string> | undefined): RoleRecord[] {
+    return [...ids ?? []]
+      .map((id) => roles.get(id))
+      .filter((r): r is RoleRecord => !!r)
+      .map((r) => ({ ...r }))
   }
 }

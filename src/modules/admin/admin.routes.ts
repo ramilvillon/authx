@@ -198,5 +198,90 @@ const admin = new Hono<AppEnv>()
       return c.body(null, 204)
     },
   )
+  .get(
+    '/services/:id/roles',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:read'),
+    async (c) =>
+      c.json(
+        (await c.var.adminService.listRoles(c.req.param('id'))).map((r) => ({
+          id: r.id,
+          name: r.name,
+          appServiceId: r.appServiceId,
+          // Inlined so reviewing a service's RBAC is one request, not one per
+          // role. A service holds a handful of roles, so there is nothing to
+          // paginate.
+          permissions: r.permissions.map((p) => ({ id: p.id, key: p.key })),
+        })),
+      ),
+  )
+  .get(
+    '/services/:id/permissions',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:read'),
+    async (c) =>
+      c.json(
+        (await c.var.adminService.listPermissions(c.req.param('id'))).map((
+          p,
+        ) => ({ id: p.id, key: p.key })),
+      ),
+  )
+  .get(
+    '/users/:userId/roles',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:read'),
+    async (c) =>
+      c.json(await c.var.adminService.listUserRoles(c.req.param('userId'))),
+  )
+  .get(
+    '/clients/:clientId/roles',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:read'),
+    async (c) =>
+      c.json(await c.var.adminService.listClientRoles(c.req.param('clientId'))),
+  )
+  .delete(
+    '/roles/:roleId/permissions/:permissionId',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:write'),
+    async (c) => {
+      await c.var.adminService.revokePermission(
+        c.req.param('roleId'),
+        c.req.param('permissionId'),
+      )
+      return c.body(null, 204)
+    },
+  )
+  .delete(
+    '/users/:userId/roles/:roleId',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:write'),
+    async (c) => {
+      await c.var.adminService.removeRole(
+        c.req.param('userId'),
+        c.req.param('roleId'),
+      )
+      return c.body(null, 204)
+    },
+  )
+  .delete(
+    '/clients/:clientId/roles/:roleId',
+    requireAuth,
+    requirePlatform,
+    requirePermission('rbac:write'),
+    async (c) => {
+      await c.var.adminService.removeClientRole(
+        c.req.param('clientId'),
+        c.req.param('roleId'),
+      )
+      return c.body(null, 204)
+    },
+  )
 
 export default admin

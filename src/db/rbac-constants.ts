@@ -8,6 +8,7 @@ export const PLATFORM_PERMISSIONS = [
   'services:read',
   'services:write',
   'members:write',
+  'rbac:read',
   'rbac:write',
 ] as const
 

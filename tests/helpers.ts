@@ -10,6 +10,7 @@ import { createDrizzleAuthCodeRepository } from '../src/modules/auth/authcode.re
 import { createDrizzleVerificationTokenRepository } from '../src/modules/verification/verification.repository.drizzle.ts'
 import type { UserRepository } from '../src/modules/users/users.repository.ts'
 import { createApp } from '../src/app.ts'
+import { PLATFORM_PERMISSIONS as CATALOGUE_PERMISSIONS } from '../src/db/rbac-constants.ts'
 import { loadConfig } from '../src/config.ts'
 import { createInMemoryUserRepository } from '../src/modules/users/users.repository.ts'
 import { createInMemoryRefreshTokenRepository } from '../src/modules/auth/token.repository.ts'
@@ -256,14 +257,9 @@ export async function authHeader(
   }
 }
 
-export const PLATFORM_PERMISSIONS = [
-  'orgs:read',
-  'orgs:write',
-  'services:read',
-  'services:write',
-  'members:write',
-  'rbac:write',
-]
+// Re-exported from the real catalogue, not copied: a second list drifted the
+// moment a permission key was added to src.
+export const PLATFORM_PERMISSIONS: string[] = [...CATALOGUE_PERMISSIONS]
 
 // Mints a platform-scoped access token directly: the token's scope IS the authz
 // for the management API, so no RBAC seeding is needed. The admin does need a
