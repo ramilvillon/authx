@@ -36,6 +36,8 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                               |
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                                     |
 | `GOOGLE_BIND_REDIRECT_URI` | _(empty)_                            | `redirect_uri` for the server-auth-code exchange; empty sends none (native SDK). See [guest accounts](guest-accounts.md) |
+| `LOGIN_MAX_FAILURES`       | `10`                                 | consecutive failed passwords before an account stops accepting them                                                      |
+| `LOGIN_LOCKOUT_MS`         | `900000` (15m)                       | how long that account refuses passwords; password reset stays available throughout                                       |
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                                    |
 | `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                                       |
 | `GUEST_RATE_LIMIT`         | `10`                                 | per-IP max `POST /users/guest` creations per `RATE_LIMIT_WINDOW_MS`                                                      |

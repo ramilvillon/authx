@@ -20,6 +20,7 @@ import { signAccessToken, signIdToken } from '../../lib/jwt.ts'
 import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
+import { createLoginAttempts } from '../../lib/login-attempts.ts'
 import { verifyChallenge } from '../../lib/pkce.ts'
 import { exchangeGoogleAuthCode } from '../../lib/google.ts'
 
@@ -40,6 +41,11 @@ export function createAuthService(deps: {
   const { userRepo, tokenRepo, config, keySet, orgRepo, rbacRepo } = deps
   const { sessionRepo, authCodeRepo, logger } = deps
 
+  // Per-account failure counter. Built here rather than injected: it is
+  // process-local state belonging to this service, and every caller already
+  // shares one instance of it.
+  const loginAttempts = createLoginAttempts(config.loginThrottle)
+
   // Computed once and reused so failed logins for missing/passwordless users
   // still pay the bcrypt cost, equalizing response timing (no user enumeration).
   let dummyHash: string | null = null
@@ -48,6 +54,35 @@ export function createAuthService(deps: {
       dummyHash = await hashPassword('invalid-placeholder-password')
     }
     return dummyHash
+  }
+
+  // The one place a password is checked against an account. Both entry points
+  // (the password grant and the SSO login form) go through it, so the failure
+  // count cannot be dodged by switching endpoint.
+  //
+  // A locked account still pays the hash cost and answers with the SAME error
+  // as a wrong password. A distinct code would be an enumeration oracle:
+  // unknown accounts are never tracked, so "locked" would mean "exists".
+  async function authenticatePassword(
+    user: UserRecord | null,
+    password: string,
+  ): Promise<UserRecord> {
+    const locked = user !== null && loginAttempts.isLocked(user.id)
+    // Always run a bcrypt comparison to keep timing constant across the
+    // missing-user, passwordless-user, wrong-password and locked branches.
+    const hash = locked
+      ? await getDummyHash()
+      : user?.passwordHash ?? await getDummyHash()
+    const passwordOk = await verifyPassword(password, hash)
+    if (locked || !user || !user.passwordHash || !passwordOk) {
+      // Only count failures for accounts that exist: an unbounded map keyed by
+      // whatever a caller sends is a memory-growth vector, and there is nothing
+      // to protect on an account that is not there.
+      if (user && !locked) loginAttempts.recordFailure(user.id)
+      throw AppError.of('invalid_credentials')
+    }
+    loginAttempts.clear(user.id)
+    return user
   }
 
   // Deleting a user removes only the users row; its refresh tokens, sessions,
@@ -188,18 +223,12 @@ export function createAuthService(deps: {
     ): Promise<TokenPair> {
       // An email or a generated username. Generated usernames never contain
       // '@', so the test is unambiguous in both directions.
-      const user = identifier.includes('@')
+      // The lookup is the only thing that branches; everything after it is
+      // constant across the missing-user and wrong-password cases.
+      const found = identifier.includes('@')
         ? await userRepo.findByEmail(identifier)
         : await userRepo.findByUsername(identifier)
-      // Always run a bcrypt comparison to keep timing constant across the
-      // missing-user, passwordless-user, and wrong-password branches -- on
-      // BOTH lookup paths, which is why the lookup is the only thing that
-      // branches.
-      const hash = user?.passwordHash ?? await getDummyHash()
-      const passwordOk = await verifyPassword(password, hash)
-      if (!user || !user.passwordHash || !passwordOk) {
-        throw AppError.of('invalid_credentials')
-      }
+      const user = await authenticatePassword(found, password)
       return issueTokensForService(user.id, audience)
     },
     async refreshGrant(
@@ -428,13 +457,10 @@ export function createAuthService(deps: {
       email: string,
       password: string,
     ): Promise<{ token: string; userId: string }> {
-      const user = await userRepo.findByEmail(email)
-      // Constant-time across missing/passwordless/wrong-password (see passwordGrant).
-      const hash = user?.passwordHash ?? await getDummyHash()
-      const passwordOk = await verifyPassword(password, hash)
-      if (!user || !user.passwordHash || !passwordOk) {
-        throw AppError.of('invalid_credentials')
-      }
+      const user = await authenticatePassword(
+        await userRepo.findByEmail(email),
+        password,
+      )
       requireVerifiedEmail(user)
       return createSession(user.id)
     },

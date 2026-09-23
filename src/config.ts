@@ -94,6 +94,16 @@ const schema = z.object({
   // and cascades. Account deletion is something an attacker can trigger, so
   // this is the window in which that is reversible. Defaults to 30 days.
   ACCOUNT_PURGE_GRACE: z.coerce.number().default(2592000),
+  // Per-account login throttling (NIST SP 800-63B-4, OWASP ASVS). The global
+  // limiter is keyed on IP, which a distributed password-spray walks straight
+  // past: every attempt comes from a different address, and each account sees
+  // only a handful. This counts CONSECUTIVE failures per account instead.
+  LOGIN_MAX_FAILURES: z.coerce.number().default(10),
+  // How long an account stops accepting passwords once the count is reached.
+  // Bounds the damage either way: brute force drops to LOGIN_MAX_FAILURES per
+  // window, and a deliberate lockout of someone else's account lasts only this
+  // long -- password reset stays open throughout.
+  LOGIN_LOCKOUT_MS: z.coerce.number().default(900000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   // Guest creation gets its own budget, tighter than the global default and
@@ -159,6 +169,7 @@ export type Config = {
   }
   pruneRetention: number
   accountPurgeGrace: number
+  loginThrottle: { maxFailures: number; lockoutMs: number }
   rateLimit: { windowMs: number; max: number; guestMax: number }
   trustProxyHops: number
 }
@@ -207,6 +218,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     pruneRetention: e.PRUNE_RETENTION,
     accountPurgeGrace: e.ACCOUNT_PURGE_GRACE,
+    loginThrottle: {
+      maxFailures: e.LOGIN_MAX_FAILURES,
+      lockoutMs: e.LOGIN_LOCKOUT_MS,
+    },
     rateLimit: {
       windowMs: e.RATE_LIMIT_WINDOW_MS,
       max: e.RATE_LIMIT_MAX,
