@@ -20,6 +20,10 @@
    unless it is already a platform admin or the password matches, and fails
    instead.
 4. **Start the server** with `deno task start`.
+   - Upgrading an environment seeded before `rbac:read` existed? Its admin role
+     does not hold that key, so the RBAC listings answer 403. Re-run
+     `deno task db:seed`: it backfills any missing platform permission and
+     grants it to the admin role, skipping what is already there.
 5. **Schedule `db:prune`**, described below.
 
 ## Scheduling `db:prune`

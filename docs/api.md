@@ -106,21 +106,28 @@ way to tell which account it is.
 These routes require a Bearer token minted for the reserved `platform` audience
 (`requireAuth` + `requirePlatform`) plus the listed permission.
 
-| Method   | Path                        | Permission       | Description                                                  |
-| -------- | --------------------------- | ---------------- | ------------------------------------------------------------ |
-| `POST`   | `/orgs`                     | `orgs:write`     | Create an organization                                       |
-| `GET`    | `/orgs`                     | `orgs:read`      | List organizations                                           |
-| `GET`    | `/orgs/:id`                 | `orgs:read`      | Get an organization                                          |
-| `POST`   | `/orgs/:id/services`        | `services:write` | Register a service (one-time secret)                         |
-| `GET`    | `/orgs/:id/services`        | `services:read`  | List an org's services                                       |
-| `PATCH`  | `/services/:id`             | `services:write` | Update a service's `name`, `redirectUris` or `guestsEnabled` |
-| `POST`   | `/orgs/:id/members`         | `members:write`  | Add a member                                                 |
-| `DELETE` | `/orgs/:id/members/:userId` | `members:write`  | Remove a member                                              |
-| `POST`   | `/services/:id/roles`       | `rbac:write`     | Create a role for a service                                  |
-| `POST`   | `/services/:id/permissions` | `rbac:write`     | Create a permission for a service                            |
-| `POST`   | `/roles/:id/permissions`    | `rbac:write`     | Grant a permission to a role                                 |
-| `POST`   | `/users/:userId/roles`      | `rbac:write`     | Assign a role to a user                                      |
-| `POST`   | `/clients/:clientId/roles`  | `rbac:write`     | Grant a role to a client (M2M principal)                     |
+| Method   | Path                                       | Permission       | Description                                                  |
+| -------- | ------------------------------------------ | ---------------- | ------------------------------------------------------------ |
+| `POST`   | `/orgs`                                    | `orgs:write`     | Create an organization                                       |
+| `GET`    | `/orgs`                                    | `orgs:read`      | List organizations                                           |
+| `GET`    | `/orgs/:id`                                | `orgs:read`      | Get an organization                                          |
+| `POST`   | `/orgs/:id/services`                       | `services:write` | Register a service (one-time secret)                         |
+| `GET`    | `/orgs/:id/services`                       | `services:read`  | List an org's services                                       |
+| `PATCH`  | `/services/:id`                            | `services:write` | Update a service's `name`, `redirectUris` or `guestsEnabled` |
+| `POST`   | `/orgs/:id/members`                        | `members:write`  | Add a member                                                 |
+| `DELETE` | `/orgs/:id/members/:userId`                | `members:write`  | Remove a member                                              |
+| `POST`   | `/services/:id/roles`                      | `rbac:write`     | Create a role for a service                                  |
+| `POST`   | `/services/:id/permissions`                | `rbac:write`     | Create a permission for a service                            |
+| `POST`   | `/roles/:id/permissions`                   | `rbac:write`     | Grant a permission to a role                                 |
+| `POST`   | `/users/:userId/roles`                     | `rbac:write`     | Assign a role to a user                                      |
+| `POST`   | `/clients/:clientId/roles`                 | `rbac:write`     | Grant a role to a client (M2M principal)                     |
+| `GET`    | `/services/:id/roles`                      | `rbac:read`      | List a service's roles, each with its permissions inlined    |
+| `GET`    | `/services/:id/permissions`                | `rbac:read`      | List a service's permissions                                 |
+| `GET`    | `/users/:userId/roles`                     | `rbac:read`      | List the roles a user holds                                  |
+| `GET`    | `/clients/:clientId/roles`                 | `rbac:read`      | List the roles a client holds                                |
+| `DELETE` | `/roles/:roleId/permissions/:permissionId` | `rbac:write`     | Revoke a permission from a role                              |
+| `DELETE` | `/users/:userId/roles/:roleId`             | `rbac:write`     | Unassign a role from a user                                  |
+| `DELETE` | `/clients/:clientId/roles/:roleId`         | `rbac:write`     | Unassign a role from a client                                |
 
 Setting `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` before
 `deno task
@@ -141,6 +148,26 @@ curl -X POST localhost:3000/oauth/token \
 # call a protected route
 curl localhost:3000/users/me -H "authorization: Bearer <access_token>"
 ```
+
+### Revoking
+
+The three `DELETE`s are idempotent: they answer 204 whether or not the grant was
+there, because the state the caller asked for — that grant does not exist —
+holds either way. The `GET`s 404 an unknown service id, which is a wrong id
+rather than an empty answer.
+
+**A revoke only affects tokens minted afterwards.** Permissions are read at
+issuance and written into the access token's `scope`, so a token already in a
+client's hands keeps what it was given until it expires (`ACCESS_TOKEN_TTL`, 15
+minutes by default). Revoke the refresh token too if you need to cut access off
+sooner.
+
+Roles and permissions themselves cannot be deleted through the API — only
+created, granted and revoked. Deleting a row that grants still reference needs a
+cascade decision that has not been made.
+
+Note `:id` on the service routes and `:clientId` on the client routes are the
+service row's **UUID**, not its OAuth `client_id` string.
 
 ## Authorization Code + PKCE (SSO)
 
