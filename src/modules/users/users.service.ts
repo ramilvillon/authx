@@ -1,3 +1,4 @@
+import { assertAcceptablePassword } from '../../lib/password-policy.ts'
 import type { UserRecord, UserRepository } from './users.repository.ts'
 import type {
   PublicUser,
@@ -51,6 +52,7 @@ export function createUserService(deps: {
       if (await repo.findAnyByEmail(input.email)) {
         throw AppError.of('email_taken')
       }
+      assertAcceptablePassword(input.password)
       const now = new Date()
       const user = await repo.create({
         id: crypto.randomUUID(),
@@ -163,6 +165,7 @@ export function createUserService(deps: {
             throw AppError.of('invalid_credentials')
           }
         }
+        assertAcceptablePassword(input.password)
         patch.passwordHash = await hashPassword(input.password)
       }
       if (input.name !== undefined) patch.name = input.name

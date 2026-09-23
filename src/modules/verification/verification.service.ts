@@ -9,6 +9,7 @@ import type {
   VerificationTokenRepository,
 } from './verification.repository.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
+import { assertAcceptablePassword } from '../../lib/password-policy.ts'
 import { AppError } from '../../lib/errors.ts'
 
 export type VerificationService = ReturnType<typeof createVerificationService>
@@ -183,6 +184,10 @@ export function createVerificationService(deps: {
       await startConfirmation(user.id, 'password_reset', user.email, user.email)
     },
     async resetPassword(token: string, password: string): Promise<void> {
+      // Before the link is even looked up, and so before it is consumed: a
+      // refused password must cost the user nothing. Consuming first would
+      // burn the link and strand them (PR #35, on the email-change path).
+      assertAcceptablePassword(password)
       const record = await verificationRepo.findByHash(await hashToken(token))
       if (!record || record.purpose !== 'password_reset') {
         throw AppError.of('invalid_verification_link')

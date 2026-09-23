@@ -87,6 +87,25 @@ mean the account still lacks an address: a guest that binds Google has both.
 | Guest, unbound             | null            | set         |
 | Guest, after a Google bind | set             | set         |
 
+### Password rules
+
+A password a person chooses — at registration, on a self-service change, or
+through a reset — must be at least 8 characters, at most 72 bytes, and must not
+appear in the bundled list of ~3,900 common passwords (matched
+case-insensitively). Failures are 400 `weak_password` or 400
+`password_too_long`.
+
+The 72-byte ceiling is bcrypt's: past it the extra bytes are ignored, so two
+long passwords sharing a prefix would authenticate each other. authx refuses the
+input rather than silently truncating it. Note the limit counts bytes, so one
+emoji costs four.
+
+A reset link is not consumed by a refused password: the rules are checked first,
+so the user can submit a better one with the same link.
+
+Generated secrets — a guest account's password — skip these rules; they are
+random, and a blocklist hit on one would be a false positive.
+
 Addresses are matched **case-insensitively** — `casey@b.com` and `CASEY@b.com`
 are the same account, so the second one cannot be registered and either spelling
 signs in. They are stored as they were typed; mail always goes to the stored
