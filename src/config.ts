@@ -288,6 +288,7 @@ export function passwordGrantWarning(
   return 'ALLOW_PASSWORD_GRANT is on: /oauth/token accepts grant_type=password, ' +
     'which RFC 9700 (OAuth 2.0 Security BCP) says MUST NOT be used. Move ' +
     'clients to the authorization code flow with PKCE, then set ' +
-    'ALLOW_PASSWORD_GRANT=false. Guest accounts sign in with this grant and ' +
-    'stop working when it is off. A future release turns it off by default.'
+    'ALLOW_PASSWORD_GRANT=false. Guest accounts sign in with this grant, so ' +
+    'guest creation is refused while it is off. A future release turns it ' +
+    'off by default.'
 }
