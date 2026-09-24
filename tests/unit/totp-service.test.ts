@@ -1,6 +1,8 @@
-import { assert, assertEquals, assertMatch } from '@std/assert'
-import { makeTestDeps, totpCode } from '../helpers.ts'
+import { assert, assertEquals, assertMatch, assertRejects } from '@std/assert'
+import { makeTestDeps, TEST_TOTP_KEY, totpCode } from '../helpers.ts'
 import { AppError } from '../../src/lib/errors.ts'
+import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
+import { createTotpService } from '../../src/modules/mfa/totp.service.ts'
 
 async function setup(env: Record<string, string> = {}) {
   const ctx = makeTestDeps(env)
@@ -74,6 +76,27 @@ Deno.test('startSetup while enabled is 409 and leaves the enabled secret alone',
     'totp_already_enabled',
   )
   assertEquals(await ctx.totpRepo.find(ctx.user.id), before)
+})
+
+Deno.test('startSetup propagates a non-duplicate createPending failure as-is', async () => {
+  const ctx = await setup()
+  const totpRepo = {
+    ...createInMemoryTotpRepository(),
+    createPending() {
+      return Promise.reject(new Error('db down'))
+    },
+  }
+  const totp = createTotpService({
+    totpRepo,
+    userRepo: ctx.userRepo,
+    issuer: 'http://test.local',
+    encryptionKey: TEST_TOTP_KEY,
+  })
+  await assertRejects(
+    () => totp.startSetup(ctx.user.id),
+    Error,
+    'db down',
+  )
 })
 
 Deno.test('confirm with no setup is totp_not_pending; confirm twice is 409', async () => {

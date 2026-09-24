@@ -88,8 +88,17 @@ export function createTotpService(deps: {
       await totpRepo.deletePending(userId)
       try {
         await totpRepo.createPending(userId, await sealSecret(k, secret))
-      } catch {
-        throw AppError.of('totp_already_enabled')
+      } catch (err) {
+        // createPending only throws on the primary key, but distinguishing
+        // that from a transient failure by sniffing the driver's error code
+        // would couple this service to the driver. Re-read instead: if a
+        // confirm won the race while we were sealing the secret, the row is
+        // now enabled and that IS the race this guards against. Anything
+        // else (a dropped connection, etc.) is not ours to reinterpret.
+        if ((await totpRepo.find(userId))?.enabledAt) {
+          throw AppError.of('totp_already_enabled')
+        }
+        throw err
       }
       const b32 = toBase32(secret)
       return {
