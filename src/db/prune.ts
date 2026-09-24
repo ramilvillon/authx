@@ -2,12 +2,14 @@ import type { RefreshTokenRepository } from '../modules/auth/token.repository.ts
 import type { SessionRepository } from '../modules/auth/session.repository.ts'
 import type { AuthCodeRepository } from '../modules/auth/authcode.repository.ts'
 import type { VerificationTokenRepository } from '../modules/verification/verification.repository.ts'
+import type { PasskeyRepository } from '../modules/passkeys/passkey.repository.ts'
 
 export type PrunableRepos = {
   tokenRepo: RefreshTokenRepository
   sessionRepo: SessionRepository
   authCodeRepo: AuthCodeRepository
   verificationRepo: VerificationTokenRepository
+  passkeyRepo: Pick<PasskeyRepository, 'deleteExpiredChallengesBefore'>
 }
 
 export type PruneCounts = {
@@ -15,6 +17,7 @@ export type PruneCounts = {
   sessions: number
   authorizationCodes: number
   emailVerificationTokens: number
+  webauthnChallenges: number
 }
 
 // Deletes rows that expired before `cutoff`. Nothing else in the codebase ever
@@ -43,17 +46,20 @@ export async function pruneExpired(
     sessions,
     authorizationCodes,
     emailVerificationTokens,
+    webauthnChallenges,
   ] = await Promise.all([
     repos.tokenRepo.deleteExpiredBefore(cutoff),
     repos.sessionRepo.deleteExpiredBefore(cutoff),
     repos.authCodeRepo.deleteExpiredBefore(cutoff),
     repos.verificationRepo.deleteExpiredBefore(cutoff),
+    repos.passkeyRepo.deleteExpiredChallengesBefore(cutoff),
   ])
   return {
     refreshTokens,
     sessions,
     authorizationCodes,
     emailVerificationTokens,
+    webauthnChallenges,
   }
 }
 
@@ -76,6 +82,9 @@ if (import.meta.main) {
   const { createDrizzleVerificationTokenRepository } = await import(
     '../modules/verification/verification.repository.drizzle.ts'
   )
+  const { createDrizzlePasskeyRepository } = await import(
+    '../modules/passkeys/passkey.repository.drizzle.ts'
+  )
 
   const { createDeps } = await import('../deps.ts')
   const config = loadConfig(Deno.env.toObject())
@@ -90,6 +99,7 @@ if (import.meta.main) {
     sessionRepo: createDrizzleSessionRepository(db),
     authCodeRepo: createDrizzleAuthCodeRepository(db),
     verificationRepo: createDrizzleVerificationTokenRepository(db),
+    passkeyRepo: createDrizzlePasskeyRepository(db),
   }, cutoff)
   logger.info(
     {

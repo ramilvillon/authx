@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   datetime,
   index,
@@ -180,3 +181,38 @@ export const totpRecoveryCodes = mysqlTable('totp_recovery_codes', {
   usedAt: datetime('used_at'),
   // Leftmost column is user_id, so this also serves per-user lookups.
 }, (t) => ({ userCode: unique().on(t.userId, t.codeHash) }))
+
+// One row per passkey. credential_id is case-sensitive base64url and can be
+// up to 1,366 chars: too long for a unique index, and the ai_ci collation
+// would fold two ids that differ only in case. Lookups and uniqueness go
+// through its sha256 instead.
+export const passkeys = mysqlTable('passkeys', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  credentialId: text('credential_id').notNull(),
+  credentialIdHash: varchar('credential_id_hash', { length: 64 }).notNull()
+    .unique(),
+  publicKey: text('public_key').notNull(),
+  // The authenticator's signature counter: a uint32, past int's range.
+  counter: bigint('counter', { mode: 'number', unsigned: true }).notNull()
+    .default(0),
+  // Comma-separated; '' when the browser reported none.
+  transports: varchar('transports', { length: 255 }).notNull().default(''),
+  aaguid: varchar('aaguid', { length: 36 }).notNull(),
+  backedUp: boolean('backed_up').notNull(),
+  createdAt: datetime('created_at').notNull(),
+  lastUsedAt: datetime('last_used_at'),
+}, (t) => ({ userIdx: index('passkeys_user_idx').on(t.userId) }))
+
+// Server-side and single-use on purpose: synced passkeys always report
+// counter 0, so only consuming the challenge stops a replayed assertion.
+export const webauthnChallenges = mysqlTable('webauthn_challenges', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  challengeHash: varchar('challenge_hash', { length: 64 }).notNull().unique(),
+  purpose: varchar('purpose', { length: 16 }).notNull(),
+  // Set for 'register' (the ceremony belongs to one signed-in user); NULL for
+  // sign-in, which is usernameless.
+  userId: varchar('user_id', { length: 36 }),
+  expiresAt: datetime('expires_at').notNull(),
+  consumedAt: datetime('consumed_at'),
+})

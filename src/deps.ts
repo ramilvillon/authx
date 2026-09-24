@@ -32,6 +32,7 @@ import {
   createTotpService,
   type TotpService,
 } from './modules/mfa/totp.service.ts'
+import { createDrizzlePasskeyRepository } from './modules/passkeys/passkey.repository.drizzle.ts'
 
 export type Deps = {
   config: Config
@@ -54,6 +55,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
   const verificationRepo = createDrizzleVerificationTokenRepository(db)
   const totpRepo = createDrizzleTotpRepository(db)
+  const passkeyRepo = createDrizzlePasskeyRepository(db)
   const totpService = createTotpService({
     totpRepo,
     userRepo,
@@ -92,6 +94,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       socialRepo,
       orgRepo,
       totpRepo,
+      passkeyRepo,
       allowPasswordGrant: config.allowPasswordGrant,
     }),
     authService: createAuthService({

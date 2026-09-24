@@ -12,6 +12,7 @@ import type { OrgRepository } from '../orgs/orgs.repository.ts'
 import type { VerificationTokenRepository } from '../verification/verification.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
 import type { TotpRepository } from '../mfa/totp.repository.ts'
+import type { PasskeyRepository } from '../passkeys/passkey.repository.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { generateRefreshToken } from '../../lib/tokens.ts'
 import { AppError } from '../../lib/errors.ts'
@@ -36,6 +37,7 @@ export function createUserService(deps: {
   socialRepo: SocialAccountRepository
   orgRepo: OrgRepository
   totpRepo: TotpRepository
+  passkeyRepo: PasskeyRepository
   // Guests sign in only through the password grant.
   allowPasswordGrant: boolean
 }) {
@@ -48,6 +50,7 @@ export function createUserService(deps: {
     socialRepo,
     orgRepo,
     totpRepo,
+    passkeyRepo,
     allowPasswordGrant,
   } = deps
   return {
@@ -220,6 +223,7 @@ export function createUserService(deps: {
           repo.removeAllRoles(id),
           orgRepo.removeAllMemberships(id),
           totpRepo.deleteAllForUser(id),
+          passkeyRepo.deleteAllForUser(id),
         ])
         await repo.delete(id)
       }

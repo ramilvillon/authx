@@ -2,6 +2,7 @@ import { createInMemoryOrgRepository } from '../../src/modules/orgs/orgs.reposit
 import { assertEquals, assertRejects } from '@std/assert'
 import { createInMemoryUserRepository } from '../../src/modules/users/users.repository.ts'
 import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
+import { createInMemoryPasskeyRepository } from '../../src/modules/passkeys/passkey.repository.ts'
 import { createUserService } from '../../src/modules/users/users.service.ts'
 import { updateUserSchema } from '../../src/modules/users/users.schema.ts'
 import { verifyPassword } from '../../src/lib/password.ts'
@@ -38,6 +39,7 @@ function fullService() {
       socialRepo,
       orgRepo,
       totpRepo: createInMemoryTotpRepository(),
+      passkeyRepo: createInMemoryPasskeyRepository(),
       allowPasswordGrant: true,
     }),
   }
@@ -59,6 +61,7 @@ function service(repo = createInMemoryUserRepository({ user: [] })) {
       socialRepo: createInMemorySocialAccountRepository(),
       orgRepo: createInMemoryOrgRepository(),
       totpRepo: createInMemoryTotpRepository(),
+      passkeyRepo: createInMemoryPasskeyRepository(),
       allowPasswordGrant: true,
     }),
   }

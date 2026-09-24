@@ -173,3 +173,33 @@ Deno.test('purging an account erases its TOTP secret and recovery codes', async 
   assertEquals(await ctx.totpRepo.find(user.id), null)
   assertEquals(await ctx.totpRepo.consumeRecoveryCode(user.id, 'h1'), false)
 })
+
+Deno.test('purging an account erases its passkeys and challenges', async () => {
+  const ctx = makeTestDeps()
+  const now = new Date()
+  const user = await ctx.userRepo.create({
+    id: crypto.randomUUID(),
+    email: 'purge-passkey@b.com',
+    passwordHash: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await ctx.passkeyRepo.create({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    credentialId: 'Y3JlZA',
+    credentialIdHash: 'f'.repeat(64),
+    publicKey: 'cGs',
+    counter: 0,
+    transports: [],
+    aaguid: '00000000-0000-0000-0000-000000000000',
+    backedUp: false,
+    createdAt: now,
+    lastUsedAt: null,
+  })
+  await ctx.deps.userService.remove(user.id)
+  // Kept through the grace period: an undelete keeps its passkeys.
+  assertEquals((await ctx.passkeyRepo.listForUser(user.id)).length, 1)
+  await ctx.deps.userService.purgeDeletedBefore(new Date(Date.now() + 1000))
+  assertEquals(await ctx.passkeyRepo.listForUser(user.id), [])
+})
