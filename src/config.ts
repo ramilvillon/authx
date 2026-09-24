@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { decodeBase64 } from '@std/encoding'
 
 const schema = z.object({
   PORT: z.coerce.number().default(3000),
@@ -65,6 +66,21 @@ const schema = z.object({
   // the quickstart leads with the code flow.
   ALLOW_PASSWORD_GRANT: z.enum(['true', 'false']).default('true')
     .transform((v) => v === 'true'),
+  // AES-256 key sealing TOTP secrets at rest (a TOTP secret cannot be hashed:
+  // the server needs it to compute codes). Empty = two-factor setup is not
+  // offered (enrolled users are still asked for a code). Generate: openssl
+  // rand -base64 32
+  TOTP_ENCRYPTION_KEY: z.string().default('').refine(
+    (v) => {
+      if (v === '') return true
+      try {
+        return decodeBase64(v).length === 32
+      } catch {
+        return false
+      }
+    },
+    'TOTP_ENCRYPTION_KEY must be base64 of exactly 32 bytes (openssl rand -base64 32)',
+  ),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -159,6 +175,7 @@ export type Config = {
   emailLogLinks: boolean
   requireEmailVerification: boolean
   allowPasswordGrant: boolean
+  totpEncryptionKey: string
   smtp: {
     host: string
     port: number
@@ -210,6 +227,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     emailLogLinks: e.EMAIL_LOG_LINKS,
     requireEmailVerification: e.REQUIRE_EMAIL_VERIFICATION,
     allowPasswordGrant: e.ALLOW_PASSWORD_GRANT,
+    totpEncryptionKey: e.TOTP_ENCRYPTION_KEY,
     smtp: {
       host: e.SMTP_HOST,
       port: e.SMTP_PORT,

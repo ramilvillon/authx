@@ -10,6 +10,8 @@ import { createInMemoryAuthCodeRepository } from '../../src/modules/auth/authcod
 import { createUserService } from '../../src/modules/users/users.service.ts'
 import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
+import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
+import { createTotpService } from '../../src/modules/mfa/totp.service.ts'
 import { loadConfig } from '../../src/config.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 import type { Logger } from '../../src/lib/logger.ts'
@@ -20,13 +22,17 @@ const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
 // A stand-in for pino's Logger -- these tests never assert on log output.
 const testLogger = { error: () => {} } as unknown as Logger
 
-function setup() {
+function setup(opts: {
+  env?: Record<string, string>
+  totp?: Parameters<typeof createAuthService>[0]['totp']
+} = {}) {
   const config = loadConfig({
     DB_USER: 'app',
     DB_NAME: 'app',
     JWT_PRIVATE_KEY: privateKeyPem,
     JWT_PUBLIC_KEY: publicKeyPem,
     JWT_ISSUER: 'http://localhost:3000',
+    ...opts.env,
   })
   const userRepo = createInMemoryUserRepository({ user: [] })
   const tokenRepo = createInMemoryRefreshTokenRepository()
@@ -55,6 +61,12 @@ function setup() {
     sessionRepo,
     authCodeRepo: createInMemoryAuthCodeRepository(),
     logger: testLogger,
+    totp: opts.totp ?? createTotpService({
+      totpRepo: createInMemoryTotpRepository(),
+      userRepo,
+      issuer: config.issuer,
+      encryptionKey: '',
+    }),
   })
   return { authService, userService, orgRepo, rbacRepo }
 }
@@ -189,4 +201,41 @@ Deno.test('password grant token carries correct aud and scope', async () => {
   const { payload } = decode(pair.access_token)
   assertEquals(payload.aud, 'acme-billing')
   assertEquals(payload.scope, 'billing:read')
+})
+
+// isLocked -> await verify -> recordFailure let a parallel burst all pass the
+// lock check before any failure was counted. Each attempt must be counted
+// before the await.
+Deno.test('parallel code guesses cannot exceed LOGIN_MAX_FAILURES', async () => {
+  let verifyCalls = 0
+  const { authService, userService } = setup({
+    env: { LOGIN_MAX_FAILURES: '3' },
+    totp: {
+      isEnabled: () => Promise.resolve(true),
+      verify: async (_userId: string, code: string) => {
+        verifyCalls++
+        await new Promise((r) => setTimeout(r, 5))
+        return code === '123456'
+      },
+    },
+  })
+  const user = await userService.register({
+    email: 'race@b.com',
+    password: 'pw123456',
+  })
+  await Promise.allSettled(
+    Array.from(
+      { length: 10 },
+      () => authService.completeMfaLogin(user.id, 'wrong'),
+    ),
+  )
+  assert(verifyCalls <= 3, `verify ran ${verifyCalls} times`)
+  // The valid code is refused by the lock, before verify even runs.
+  const before = verifyCalls
+  await assertRejects(
+    () => authService.completeMfaLogin(user.id, '123456'),
+    Error,
+    'invalid credentials',
+  )
+  assertEquals(verifyCalls, before)
 })

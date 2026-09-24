@@ -27,6 +27,11 @@ import {
   createVerificationService,
   type VerificationService,
 } from './modules/verification/verification.service.ts'
+import { createDrizzleTotpRepository } from './modules/mfa/totp.repository.drizzle.ts'
+import {
+  createTotpService,
+  type TotpService,
+} from './modules/mfa/totp.service.ts'
 
 export type Deps = {
   config: Config
@@ -36,6 +41,7 @@ export type Deps = {
   adminService: AdminService
   rateStore: RateLimitStore
   verificationService: VerificationService
+  totpService: TotpService
 }
 
 export async function createDeps(config: Config, db: Database): Promise<Deps> {
@@ -47,6 +53,13 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
   const sessionRepo = createDrizzleSessionRepository(db)
   const authCodeRepo = createDrizzleAuthCodeRepository(db)
   const verificationRepo = createDrizzleVerificationTokenRepository(db)
+  const totpRepo = createDrizzleTotpRepository(db)
+  const totpService = createTotpService({
+    totpRepo,
+    userRepo,
+    issuer: config.issuer,
+    encryptionKey: config.totpEncryptionKey,
+  })
   // SMTP_HOST is the switch. Unset means local development, where the log
   // sender plus EMAIL_LOG_LINKS=true is enough to click through a flow.
   const logger = createLogger(config)
@@ -91,9 +104,11 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       sessionRepo,
       authCodeRepo,
       logger,
+      totp: totpService,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
+    totpService,
   }
 }
 

@@ -37,6 +37,7 @@ Copy `.env.example` to `.env` and adjust. Config is validated at startup
 | `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                                     |
 | `GOOGLE_BIND_REDIRECT_URI` | _(empty)_                            | `redirect_uri` for the server-auth-code exchange; empty sends none (native SDK). See [guest accounts](guest-accounts.md) |
 | `ALLOW_PASSWORD_GRANT`     | `true`                               | `false` refuses `grant_type=password` (RFC 9700 forbids it); logs a warning at startup while on. Guests need it on       |
+| `TOTP_ENCRYPTION_KEY`      | _(empty)_                            | seals TOTP secrets at rest (AES-256-GCM); `''` = no new setups; enrolled users are still asked for a code                |
 | `LOGIN_MAX_FAILURES`       | `10`                                 | consecutive failed passwords before an account stops accepting them                                                      |
 | `LOGIN_LOCKOUT_MS`         | `900000` (15m)                       | how long that account refuses passwords; password reset stays available throughout                                       |
 | `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                                    |
@@ -51,6 +52,27 @@ many entries from the right and everything to the left — which the caller can
 forge — is ignored. Too low a count shares one rate-limit bucket between
 clients; too high a count lets a caller pick its own bucket. Legacy
 `true`/`false` still parse as `1`/`0`, and `true` logs a startup warning.
+
+## Two-factor authentication (TOTP)
+
+`TOTP_ENCRYPTION_KEY` seals every user's TOTP secret at rest (AES-256-GCM; a
+TOTP secret cannot be hashed the way a password is — the server needs it back to
+compute codes). Generate one with `openssl rand -base64 32`; it must decode to
+exactly 32 bytes or the server fails to start. Leave it empty (`''`, the
+default) and new two-factor setups are not offered — every `/users/me/totp*`
+endpoint answers 404. Users who already enrolled are still asked for a code
+(their recovery codes work), and an operator can reset them with
+`DELETE /users/:id/totp`, which works with no key. Store it with the JWT keys:
+it is as sensitive, and losing it has the same shape of consequence.
+
+**Removing or changing this key while users have TOTP enabled fails closed.**
+They are still asked for a code at sign-in (the account's `enabled_at` is
+unaffected), but their authenticator app's codes no longer verify — the key that
+sealed their secret is gone, so it cannot be opened. Their recovery codes still
+work, since those are hashed, not sealed. An operator can get a locked-out user
+back in with `DELETE /users/:id/totp` (see [API reference](api.md)), which
+resets two-factor authentication so they can sign in with their password alone
+and set it up again.
 
 ## Google OAuth
 

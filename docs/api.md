@@ -13,13 +13,18 @@
 | `GET`    | `/users/:id`                        | Bearer, self or `users:read:any`   | Get a user                                                                                                                                   |
 | `PATCH`  | `/users/:id`                        | Bearer, self or `users:update:any` | Update a user; a self-service `password` change requires `current_password`, and a self-service `email` change is held (202) until confirmed |
 | `DELETE` | `/users/:id`                        | Bearer, self or `users:delete:any` | Delete a user                                                                                                                                |
+| `POST`   | `/users/me/totp`                    | Bearer                             | Start two-factor (TOTP) setup; returns a new secret + `otpauth://` URI                                                                       |
+| `POST`   | `/users/me/totp/confirm`            | Bearer                             | Confirm setup with a first code; turns two-factor on, returns 10 recovery codes (shown once)                                                 |
+| `DELETE` | `/users/me/totp`                    | Bearer                             | Turn two-factor off; needs `code` or `recovery_code` as proof, throttled                                                                     |
+| `DELETE` | `/users/:id/totp`                   | Bearer + `users:update:any`        | Reset a user's two-factor authentication (operator; lost device and codes)                                                                   |
 | `GET`    | `/verify-email`                     | —                                  | Verify via emailed token                                                                                                                     |
 | `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                                                                                                       |
 | `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant                                                                                  |
 | `POST`   | `/oauth/revoke`                     | —                                  | Revoke a refresh token                                                                                                                       |
 | `GET`    | `/oauth/google`                     | —                                  | Sign in with Google, linked from the authorize login page (redirect + return)                                                                |
 | `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                                                                                                    |
-| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code`                                                                                                 |
+| `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code` (or the code page, for a two-factor account)                                                    |
+| `POST`   | `/oauth/authorize/totp`             | `authx_mfa` challenge cookie       | Submit a TOTP or recovery code to finish a two-factor sign-in; sets session, 302 with `?code`                                                |
 | `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                                                                                                       |
 | `GET`    | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
 | `POST`   | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
@@ -104,6 +109,11 @@ that exist, so "locked" would mean "this address is registered".
 **Password reset still works while an account is locked**, which is the way back
 in for someone locked out by another person's guessing.
 
+**A two-factor (TOTP) account shares this same counter with wrong codes**, not a
+separate one: a correct password alone does not clear it, only a login that
+completes fully does — so entering the right password still leaves the account
+locked if enough wrong TOTP codes came before or after it.
+
 ### Password rules
 
 A password a person chooses — at registration, on a self-service change, or
@@ -142,6 +152,81 @@ see them: `users:list` and `users:read:any` count only on the reserved
 `platform` audience, so a tenant token reaches nothing but its own row. Removing
 the field would leave an operator looking at a bare id with a null email and no
 way to tell which account it is.
+
+## Two-factor authentication (TOTP)
+
+An account turns TOTP on through the API — there is no hosted settings page. It
+is a property of the person, not of any one app: one flag covers every audience,
+so turning it on while signed into app X means app Y asks for a code too on its
+next hosted login. **Turning it on does not sign out sessions or refresh tokens
+that already exist** — those keep working until they expire; only a hosted login
+started afterwards is asked for a code.
+
+All four routes require a Bearer token (`requireAuth`); a `client_credentials`
+(service) token names no user and gets 404, as on `/users/me`. The three
+`/users/me/totp*` routes also answer 404 `totp_not_configured` when
+`TOTP_ENCRYPTION_KEY` is unset — two-factor setup is simply not offered. The
+operator reset `DELETE /users/:id/totp` works with or without the key: it is the
+way back in for users who enrolled before the key was removed.
+
+| endpoint                      | body                                             | success                                                                               | errors                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /users/me/totp`         | —                                                | 200 `{ secret, otpauth_uri }`; creates or overwrites a pending (unconfirmed) setup    | 404 `totp_not_configured` · 409 `totp_already_enabled`                                                                                                                    |
+| `POST /users/me/totp/confirm` | `{ code }`                                       | 200 `{ recovery_codes: string[10] }`, shown once and never again; turns two-factor on | 400 `totp_invalid_code` · 404 `totp_not_pending` (or `totp_not_configured`) · 409 `totp_already_enabled`                                                                  |
+| `DELETE /users/me/totp`       | exactly one of `{ code }` or `{ recovery_code }` | 204; deletes the secret and every recovery code                                       | 400 neither or both sent · 401 `invalid_credentials` (wrong proof), throttled — 429 after 5 wrong proofs per account in the rate-limit window · 404 `totp_not_configured` |
+| `DELETE /users/:id/totp`      | —                                                | 204; operator reset (idempotent)                                                      | 403 missing `users:update:any` on a platform-audience token                                                                                                               |
+
+A code is accepted once: right after confirming, wait for the next code before
+signing in — the code used to confirm cannot also sign in.
+
+`otpauth_uri` is
+`otpauth://totp/<issuer host>:<email or username>?secret=…&issuer=<issuer host>&algorithm=SHA1&digits=6&period=30`
+— draw it as a QR code client-side.
+
+`DELETE /users/:id/totp` (the operator reset) needs `users:update:any` on a
+**platform**-audience token; it is permission-only, not self-or-permission — a
+user turning off their own two-factor goes through `DELETE /users/me/totp` and
+presents proof instead. The permission gains no new power: its holder can
+already change a user's email or trigger a password reset. It exists for someone
+who lost both their device and their recovery codes; afterwards they sign in
+with their password alone and set two-factor up again.
+
+### Hosted flow
+
+`GET`/`POST /oauth/authorize` are unchanged for an account without TOTP. For one
+that has it on, the password form (or a Google sign-in) is followed by a code
+page instead of a session: a signed **`authx_mfa`** challenge cookie (HttpOnly,
+`SameSite=Lax`, path `/oauth`, 5-minute lifetime) records that the first factor
+already succeeded, and the page carries the pending authorize request forward as
+hidden fields.
+
+`POST /oauth/authorize/totp` takes the same authorize parameters plus one `code`
+field: six digits are read as a TOTP code, anything else as a recovery code. A
+missing, expired, or otherwise invalid challenge cookie sends the user back to
+the login page ("Your sign-in timed out. Please sign in again."). A wrong code
+and a locked account render the **same** code-page message, so there is nothing
+in the response to tell one from the other: "That code is not valid. Check your
+authenticator app or use a recovery code. After too many attempts, sign-in
+pauses for a while." A right code opens the session and continues exactly like a
+password login: redirect to `redirect_uri` with `?code=…`.
+
+An existing SSO session still skips the login form entirely on
+`GET /oauth/authorize` — and so skips TOTP too — because it already passed the
+check when it was created.
+
+### The token endpoint
+
+The password grant (`POST /oauth/token`) refuses a two-factor account outright.
+Once the password checks out, it answers **400
+`{"error":"mfa_required", "error_description":…}`** instead of a token pair — an
+extension error code (RFC 6749 §5.2 allows them), distinct from `invalid_grant`
+so a client library doesn't read it as "bad credentials, start over". It is
+returned only after the password is correct, so it reveals nothing to someone
+who does not already know it (the same reasoning as `email_not_verified`). A
+client that sees `mfa_required` should send the user through the authorization
+code flow (`GET /oauth/authorize`) instead, where the code page is available.
+The refresh grant is unaffected: a refresh token proves a login that already
+happened.
 
 ## Management API
 
@@ -320,13 +405,14 @@ section 5.2 defines, because OAuth client libraries parse `error` as a string:
 }
 ```
 
-| `error`                  | status | when                                                                                                                             |
-| ------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_request`        | 400    | a parameter is missing or malformed, or the body is neither form-encoded nor JSON                                                |
-| `unsupported_grant_type` | 400    | `grant_type` is not `password`, `refresh_token`, `authorization_code` or `client_credentials`                                    |
-| `invalid_grant`          | 400    | wrong credentials; an unknown, expired, revoked or replayed refresh token or code; the user is not a member of the service's org |
-| `invalid_target`         | 400    | the `audience` names no service (RFC 8707)                                                                                       |
-| `invalid_client`         | 401    | client authentication failed; carries `WWW-Authenticate: Basic` when the client used HTTP Basic                                  |
+| `error`                  | status | when                                                                                                                                                 |
+| ------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_request`        | 400    | a parameter is missing or malformed, or the body is neither form-encoded nor JSON                                                                    |
+| `unsupported_grant_type` | 400    | `grant_type` is not `password`, `refresh_token`, `authorization_code` or `client_credentials`                                                        |
+| `invalid_grant`          | 400    | wrong credentials; an unknown, expired, revoked or replayed refresh token or code; the user is not a member of the service's org                     |
+| `invalid_target`         | 400    | the `audience` names no service (RFC 8707)                                                                                                           |
+| `mfa_required`           | 400    | the password grant's credentials were correct, but the account has two-factor authentication on; sign in through the authorization code flow instead |
+| `invalid_client`         | 401    | client authentication failed; carries `WWW-Authenticate: Basic` when the client used HTTP Basic                                                      |
 
 `error_description` carries the catalogue message, so the specific reason (for
 example reuse detection) stays readable. Branch on `error`.

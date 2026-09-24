@@ -13,8 +13,12 @@
    - set `TRUST_PROXY` to the exact number of proxies in front of the server
    - if Google sign-in is on, point `GOOGLE_REDIRECT_URI` at the public
      `/oauth/google` URL
+   - set `TOTP_ENCRYPTION_KEY` (`openssl rand -base64 32`) to offer two-factor
+     authentication; leave it empty and its endpoints stay 404. No RBAC re-grant
+     is needed for the operator reset route — it uses the existing
+     `users:update:any`
 2. **Run migrations** with `deno task db:migrate` on every release, before the
-   new version starts.
+   new version starts. Migration `0013_totp` adds the two-factor tables.
 3. **Seed once** with `deno task db:seed` and `BOOTSTRAP_ADMIN_EMAIL` /
    `BOOTSTRAP_ADMIN_PASSWORD` set. The seed refuses to adopt an existing account
    unless it is already a platform admin or the password matches, and fails

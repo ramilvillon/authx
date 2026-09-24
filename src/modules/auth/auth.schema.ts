@@ -59,6 +59,11 @@ export const oauthErrorSchema = z.object({
     'invalid_grant',
     'unsupported_grant_type',
     'invalid_target',
+    // Not RFC 6749: an extension code (section 5.2 allows them), the one
+    // Auth0 uses. Distinct from invalid_grant, which client libraries read as
+    // "bad credentials, start over" -- this one means "right password, finish
+    // in the browser".
+    'mfa_required',
   ]),
   error_description: z.string(),
 })
@@ -86,6 +91,13 @@ export const authorizeFormSchema = authorizeQuerySchema.extend({
   password: z.string().min(1),
   // Optional here on purpose: a missing token is a CSRF refusal (403), not a
   // malformed body (400). The handler decides.
+  csrf_token: z.string().optional(),
+})
+
+export const totpFormSchema = authorizeQuerySchema.extend({
+  code: z.string().min(1).max(64),
+  // Optional for the same reason as on authorizeFormSchema: missing is a CSRF
+  // refusal (403), decided by the handler.
   csrf_token: z.string().optional(),
 })
 

@@ -187,3 +187,26 @@ Deno.test('ALLOW_PASSWORD_GRANT is on unless set to false, and warns while on', 
   assertStringIncludes(passwordGrantWarning(true) ?? '', 'RFC 9700')
   assertEquals(passwordGrantWarning(false), null)
 })
+
+Deno.test('TOTP_ENCRYPTION_KEY defaults to empty (TOTP off)', () => {
+  assertEquals(loadConfig(base).totpEncryptionKey, '')
+})
+
+Deno.test('TOTP_ENCRYPTION_KEY accepts base64 of exactly 32 bytes', () => {
+  const key = btoa(String.fromCharCode(...new Uint8Array(32).fill(3)))
+  assertEquals(
+    loadConfig({ ...base, TOTP_ENCRYPTION_KEY: key }).totpEncryptionKey,
+    key,
+  )
+})
+
+Deno.test('TOTP_ENCRYPTION_KEY refuses the wrong length and non-base64', () => {
+  const short = btoa(String.fromCharCode(...new Uint8Array(16)))
+  for (const bad of [short, 'not base64!!']) {
+    assertThrows(
+      () => loadConfig({ ...base, TOTP_ENCRYPTION_KEY: bad }),
+      Error,
+      'TOTP_ENCRYPTION_KEY',
+    )
+  }
+})

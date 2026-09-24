@@ -15,6 +15,7 @@ import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import type { SessionRepository } from './session.repository.ts'
 import type { AuthCodeRepository } from './authcode.repository.ts'
 import type { Logger } from '../../lib/logger.ts'
+import type { TotpService } from '../mfa/totp.service.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { signAccessToken, signIdToken } from '../../lib/jwt.ts'
 import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
@@ -25,6 +26,10 @@ import { verifyChallenge } from '../../lib/pkce.ts'
 import { exchangeGoogleAuthCode } from '../../lib/google.ts'
 
 export type AuthService = ReturnType<typeof createAuthService>
+
+export type LoginResult =
+  | { kind: 'session'; token: string; userId: string }
+  | { kind: 'mfa'; userId: string }
 
 export function createAuthService(deps: {
   userRepo: UserRepository
@@ -37,6 +42,7 @@ export function createAuthService(deps: {
   sessionRepo: SessionRepository
   authCodeRepo: AuthCodeRepository
   logger: Logger
+  totp: Pick<TotpService, 'isEnabled' | 'verify'>
 }) {
   const { userRepo, tokenRepo, config, keySet, orgRepo, rbacRepo } = deps
   const { sessionRepo, authCodeRepo, logger } = deps
@@ -63,6 +69,11 @@ export function createAuthService(deps: {
   // A locked account still pays the hash cost and answers with the SAME error
   // as a wrong password. A distinct code would be an enumeration oracle:
   // unknown accounts are never tracked, so "locked" would mean "exists".
+  //
+  // A correct password does NOT clear the failure count: the count is shared
+  // with TOTP codes, and a password holder who could reset it by signing in
+  // again could guess codes forever. It clears only once a login completes
+  // (passwordGrant's non-MFA path, finishLogin, completeMfaLogin).
   async function authenticatePassword(
     user: UserRecord | null,
     password: string,
@@ -81,7 +92,6 @@ export function createAuthService(deps: {
       if (user && !locked) loginAttempts.recordFailure(user.id)
       throw AppError.of('invalid_credentials')
     }
-    loginAttempts.clear(user.id)
     return user
   }
 
@@ -215,6 +225,15 @@ export function createAuthService(deps: {
     return { token, userId }
   }
 
+  // Where a proven first factor becomes a session -- unless the account has
+  // TOTP on, in which case the caller must collect a code first. Every hosted
+  // login path (password, Google) ends here, so one check covers them all.
+  async function finishLogin(userId: string): Promise<LoginResult> {
+    if (await deps.totp.isEnabled(userId)) return { kind: 'mfa', userId }
+    loginAttempts.clear(userId)
+    return { kind: 'session', ...(await createSession(userId)) }
+  }
+
   return {
     async passwordGrant(
       identifier: string,
@@ -234,6 +253,12 @@ export function createAuthService(deps: {
         ? await userRepo.findByEmail(identifier)
         : await userRepo.findByUsername(identifier)
       const user = await authenticatePassword(found, password)
+      // After the password, never before: a wrong password stays
+      // invalid_grant, so mfa_required tells nothing to someone without it.
+      // The grant cannot carry a second factor; TOTP is entered on the hosted
+      // login page only.
+      if (await deps.totp.isEnabled(user.id)) throw AppError.of('mfa_required')
+      loginAttempts.clear(user.id)
       return issueTokensForService(user.id, audience)
     },
     async refreshGrant(
@@ -329,7 +354,7 @@ export function createAuthService(deps: {
       providerAccountId: string
       email: string
       emailVerified: boolean
-    }): Promise<{ token: string; userId: string }> {
+    }): Promise<LoginResult> {
       const existing = await deps.socialRepo.findByProviderAccount(
         'google',
         profile.providerAccountId,
@@ -339,7 +364,7 @@ export function createAuthService(deps: {
         if (!(await subjectExists(existing.userId))) {
           throw AppError.of('invalid_grant')
         }
-        return createSession(existing.userId)
+        return finishLogin(existing.userId)
       }
 
       // Never create-or-link an account from an unverified provider email:
@@ -378,7 +403,7 @@ export function createAuthService(deps: {
           provider: 'google',
           providerAccountId: profile.providerAccountId,
         })
-        return createSession(created.id)
+        return finishLogin(created.id)
       }
 
       if (user.passwordHash !== null || !user.emailVerified) {
@@ -397,7 +422,7 @@ export function createAuthService(deps: {
         provider: 'google',
         providerAccountId: profile.providerAccountId,
       })
-      return createSession(user.id)
+      return finishLogin(user.id)
     },
     async validateAuthorizeRequest(p: {
       clientId: string
@@ -461,13 +486,35 @@ export function createAuthService(deps: {
     async loginCreateSession(
       email: string,
       password: string,
-    ): Promise<{ token: string; userId: string }> {
+    ): Promise<LoginResult> {
       const user = await authenticatePassword(
         await userRepo.findByEmail(email),
         password,
       )
       requireVerifiedEmail(user)
-      return createSession(user.id)
+      return finishLogin(user.id)
+    },
+    // The second step of a hosted login. The first factor was proven when
+    // the challenge was issued; this proves the second and opens the session.
+    // Same per-account lockout as passwords, and the same error whether the
+    // account is locked or the code is wrong.
+    async completeMfaLogin(
+      userId: string,
+      code: string,
+    ): Promise<{ token: string; userId: string }> {
+      if (!(await subjectExists(userId))) throw AppError.of('invalid_grant')
+      if (loginAttempts.isLocked(userId)) {
+        throw AppError.of('invalid_credentials')
+      }
+      // Counted BEFORE the await: requests in flight together must each see
+      // the others' attempts, or a burst walks straight past the limit. A
+      // correct code clears the count below.
+      loginAttempts.recordFailure(userId)
+      if (!(await deps.totp.verify(userId, code))) {
+        throw AppError.of('invalid_credentials')
+      }
+      loginAttempts.clear(userId)
+      return createSession(userId)
     },
     async exchangeAuthorizationCode(input: {
       code: string

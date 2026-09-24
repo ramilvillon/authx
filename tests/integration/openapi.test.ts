@@ -18,6 +18,10 @@ Deno.test('documents every mounted route', async () => {
   const expected: Array<[string, string]> = [
     ['/users', 'post'],
     ['/users/me', 'get'],
+    ['/users/me/totp', 'post'],
+    ['/users/me/totp/confirm', 'post'],
+    ['/users/me/totp', 'delete'],
+    ['/users/{id}/totp', 'delete'],
     ['/users', 'get'],
     ['/users/{id}', 'get'],
     ['/users/{id}', 'patch'],

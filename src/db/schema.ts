@@ -2,6 +2,7 @@ import {
   boolean,
   datetime,
   index,
+  int,
   mysqlTable,
   primaryKey,
   text,
@@ -157,3 +158,25 @@ export const emailVerificationTokens = mysqlTable('email_verification_tokens', {
   consumedAt: datetime('consumed_at'),
   createdAt: datetime('created_at').notNull(),
 })
+
+// Separate from `users` on purpose: every findById reads the whole users row,
+// so a secret stored there is one careless serialization away from a /me
+// response. Only the TOTP repository reads this table.
+export const userTotp = mysqlTable('user_totp', {
+  userId: varchar('user_id', { length: 36 }).primaryKey(),
+  // Sealed with TOTP_ENCRYPTION_KEY: v1:<iv>:<ciphertext>, base64 parts.
+  secret: varchar('secret', { length: 255 }).notNull(),
+  // NULL while a setup waits for its first code.
+  enabledAt: datetime('enabled_at'),
+  // Last accepted 30 s step; a code is accepted only for a later one, which
+  // is what makes a code single-use inside its drift window.
+  lastStep: int('last_step').notNull().default(0),
+})
+
+export const totpRecoveryCodes = mysqlTable('totp_recovery_codes', {
+  id: varchar('id', { length: 36 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull(),
+  codeHash: varchar('code_hash', { length: 64 }).notNull(),
+  usedAt: datetime('used_at'),
+  // Leftmost column is user_id, so this also serves per-user lookups.
+}, (t) => ({ userCode: unique().on(t.userId, t.codeHash) }))

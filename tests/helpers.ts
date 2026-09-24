@@ -19,6 +19,10 @@ import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repositor
 import { createInMemorySessionRepository } from '../src/modules/auth/session.repository.ts'
 import { createInMemoryAuthCodeRepository } from '../src/modules/auth/authcode.repository.ts'
 import { createInMemoryVerificationTokenRepository } from '../src/modules/verification/verification.repository.ts'
+import { createInMemoryTotpRepository } from '../src/modules/mfa/totp.repository.ts'
+import { createDrizzleTotpRepository } from '../src/modules/mfa/totp.repository.drizzle.ts'
+import { createTotpService } from '../src/modules/mfa/totp.service.ts'
+import { currentStep, fromBase32, hotp } from '../src/lib/totp.ts'
 import { createVerificationService } from '../src/modules/verification/verification.service.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
@@ -38,6 +42,11 @@ import type { Logger } from '../src/lib/logger.ts'
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 export const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
 
+// A fixed key: tests that need TOTP off override it with ''.
+export const TEST_TOTP_KEY = btoa(
+  String.fromCharCode(...new Uint8Array(32).fill(7)),
+)
+
 // A stand-in for pino's Logger -- these tests never assert on log output,
 // they just need something with an `.error` method to satisfy
 // exchangeGoogleAuthCode's signature.
@@ -51,6 +60,7 @@ const testEnv = {
   JWT_PUBLIC_KEY: publicKeyPem,
   JWT_ISSUER: 'http://test.local',
   LOG_LEVEL: 'silent',
+  TOTP_ENCRYPTION_KEY: TEST_TOTP_KEY,
 }
 
 export type TestContext = {
@@ -63,6 +73,7 @@ export type TestContext = {
   socialRepo: SocialAccountRepository
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
+  totpRepo: ReturnType<typeof createInMemoryTotpRepository>
   sentEmails: { to: string; purpose: TokenPurpose; link: string }[]
 }
 
@@ -109,6 +120,15 @@ export function makeTestDeps(
   const socialRepo = testDb
     ? createDrizzleSocialAccountRepository(testDb)
     : createInMemorySocialAccountRepository()
+  const totpRepo = testDb
+    ? createDrizzleTotpRepository(testDb)
+    : createInMemoryTotpRepository()
+  const totpService = createTotpService({
+    totpRepo,
+    userRepo,
+    issuer: config.issuer,
+    encryptionKey: config.totpEncryptionKey,
+  })
   const deps: Deps = {
     config,
     keySet,
@@ -134,9 +154,11 @@ export function makeTestDeps(
       sessionRepo,
       authCodeRepo,
       logger: testLogger,
+      totp: totpService,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
+    totpService,
   }
   return {
     deps,
@@ -148,19 +170,29 @@ export function makeTestDeps(
     socialRepo,
     orgRepo,
     rbacRepo,
+    totpRepo,
     sentEmails,
   }
 }
 
 export function makeTestApp(envOverrides: Record<string, string> = {}) {
-  const { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails } =
-    makeTestDeps(envOverrides)
+  const {
+    deps,
+    userRepo,
+    socialRepo,
+    orgRepo,
+    rbacRepo,
+    totpRepo,
+    sentEmails,
+  } = makeTestDeps(envOverrides)
   return {
     app: createApp(deps),
     userRepo,
     socialRepo,
     orgRepo,
     rbacRepo,
+    totpRepo,
+    totpService: deps.totpService,
     sentEmails,
   }
 }
@@ -312,15 +344,38 @@ export async function submitLoginForm(
   )
   // Submit what the page rendered, the way a browser does: posting `fields`
   // directly would hide a parameter the form forgot to carry.
-  const hidden = Object.fromEntries(
-    [...(await page.text()).matchAll(
-      /<input type="hidden" name="([^"]*)" value="([^"]*)">/g,
-    )].map(([, name, value]) => [name, unescapeHtml(value)]),
-  )
+  const hidden = hiddenFields(await page.text())
   return await app.request('/oauth/authorize', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
     body: new URLSearchParams({ ...hidden, email, password }).toString(),
+    redirect: 'manual',
+  })
+}
+
+// The hidden inputs a rendered authx page carries, unescaped.
+export function hiddenFields(html: string): Record<string, string> {
+  return Object.fromEntries(
+    [...html.matchAll(/<input type="hidden" name="([^"]*)" value="([^"]*)">/g)]
+      .map(([, name, value]) => [name, unescapeHtml(value)]),
+  )
+}
+
+// Submits the code page the way a browser does: the cookies it set (CSRF and
+// the MFA challenge) and the hidden fields it rendered, plus the code.
+export async function submitTotpForm(
+  app: ReturnType<typeof createApp>,
+  page: Response,
+  code: string,
+  cookieOverride?: string,
+): Promise<Response> {
+  const cookie = cookieOverride ??
+    page.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
+  return await app.request('/oauth/authorize/totp', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+    body: new URLSearchParams({ ...hiddenFields(await page.text()), code })
+      .toString(),
     redirect: 'manual',
   })
 }
@@ -403,4 +458,12 @@ export function stubGoogleToken(
     throw new Error(`unexpected fetch to ${url}`)
   }) as typeof fetch
   return { calls, bodies, restore: () => globalThis.fetch = real }
+}
+
+// The code an authenticator app would show now (+offset steps). Replay
+// protection makes a used step unusable: confirm with offset 0, then use +1
+// for the next TOTP in the same test -- never -1 (a clock rollover between
+// generating and verifying would push it out of the window).
+export function totpCode(secretB32: string, offset = 0): Promise<string> {
+  return hotp(fromBase32(secretB32), currentStep() + offset)
 }
