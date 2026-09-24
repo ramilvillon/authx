@@ -44,14 +44,14 @@ sequenceDiagram
 
 ## Features
 
-| Area               | What you get                                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| **Sign-in**        | Email + password, Sign in with Google, SSO login page, guest accounts that upgrade later                    |
-| **Protocols**      | OAuth 2.0 (password, refresh, authorization code + PKCE, client credentials), OIDC `id_token` + UserInfo    |
-| **Authorization**  | Organizations, services, roles and permissions; audience-scoped tokens; M2M principals with their own roles |
-| **Account safety** | Email verification, password reset, confirmed email change and deletion, soft delete with a grace period    |
-| **Token security** | Refresh rotation with reuse detection, key rotation via `kid`, `client_secret_basic` / `client_secret_post` |
-| **Operations**     | Rate limiting, proxy-aware client IPs, OpenAPI spec + Scalar docs at `/docs`, one-command local stack       |
+| Area               | What you get                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Sign-in**        | Email + password, Sign in with Google, SSO login page, TOTP two-factor with recovery codes, guest accounts that upgrade later |
+| **Protocols**      | OAuth 2.0 (password, refresh, authorization code + PKCE, client credentials), OIDC `id_token` + UserInfo                      |
+| **Authorization**  | Organizations, services, roles and permissions; audience-scoped tokens; M2M principals with their own roles                   |
+| **Account safety** | Email verification, password reset, confirmed email change and deletion, soft delete with a grace period                      |
+| **Token security** | Refresh rotation with reuse detection, key rotation via `kid`, `client_secret_basic` / `client_secret_post`                   |
+| **Operations**     | Rate limiting, proxy-aware client IPs, OpenAPI spec + Scalar docs at `/docs`, one-command local stack                         |
 
 ## Quickstart
 
@@ -99,6 +99,12 @@ Emails land in Mailpit at http://localhost:8025.
 `/oauth/authorize?client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256`.
 They sign in with a password or Google, you get `?code=` back, and you exchange
 it at `/oauth/token`. Add `scope=openid email profile` to get an `id_token`.
+
+**Two-factor (TOTP).** Set `TOTP_ENCRYPTION_KEY`, then users turn it on with
+`POST /users/me/totp` (show the returned `otpauth_uri` as a QR code) and
+`POST /users/me/totp/confirm`, which returns ten one-time recovery codes. From
+then on the hosted login page asks for a code after the password or Google, and
+the password grant answers `mfa_required`. See the [API reference](docs/api.md).
 
 **Service to service.** A confidential service trades its credentials for a
 short-lived token scoped to the target service:
