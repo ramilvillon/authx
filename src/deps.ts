@@ -104,6 +104,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       sessionRepo,
       authCodeRepo,
       logger,
+      totp: totpService,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,

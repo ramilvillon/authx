@@ -15,6 +15,7 @@ import type { RbacRepository } from '../rbac/rbac.repository.ts'
 import type { SessionRepository } from './session.repository.ts'
 import type { AuthCodeRepository } from './authcode.repository.ts'
 import type { Logger } from '../../lib/logger.ts'
+import type { TotpService } from '../mfa/totp.service.ts'
 import { hashPassword, verifyPassword } from '../../lib/password.ts'
 import { signAccessToken, signIdToken } from '../../lib/jwt.ts'
 import { claimsForScopes, grantedOidcScopes } from '../../lib/oidc.ts'
@@ -37,6 +38,7 @@ export function createAuthService(deps: {
   sessionRepo: SessionRepository
   authCodeRepo: AuthCodeRepository
   logger: Logger
+  totp: Pick<TotpService, 'isEnabled' | 'verify'>
 }) {
   const { userRepo, tokenRepo, config, keySet, orgRepo, rbacRepo } = deps
   const { sessionRepo, authCodeRepo, logger } = deps
@@ -234,6 +236,11 @@ export function createAuthService(deps: {
         ? await userRepo.findByEmail(identifier)
         : await userRepo.findByUsername(identifier)
       const user = await authenticatePassword(found, password)
+      // After the password, never before: a wrong password stays
+      // invalid_grant, so mfa_required tells nothing to someone without it.
+      // The grant cannot carry a second factor; TOTP is entered on the hosted
+      // login page only.
+      if (await deps.totp.isEnabled(user.id)) throw AppError.of('mfa_required')
       return issueTokensForService(user.id, audience)
     },
     async refreshGrant(

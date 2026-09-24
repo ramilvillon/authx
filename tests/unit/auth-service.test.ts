@@ -10,6 +10,8 @@ import { createInMemoryAuthCodeRepository } from '../../src/modules/auth/authcod
 import { createUserService } from '../../src/modules/users/users.service.ts'
 import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
+import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
+import { createTotpService } from '../../src/modules/mfa/totp.service.ts'
 import { loadConfig } from '../../src/config.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 import type { Logger } from '../../src/lib/logger.ts'
@@ -55,6 +57,12 @@ function setup() {
     sessionRepo,
     authCodeRepo: createInMemoryAuthCodeRepository(),
     logger: testLogger,
+    totp: createTotpService({
+      totpRepo: createInMemoryTotpRepository(),
+      userRepo,
+      issuer: config.issuer,
+      encryptionKey: '',
+    }),
   })
   return { authService, userService, orgRepo, rbacRepo }
 }

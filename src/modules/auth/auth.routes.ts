@@ -47,6 +47,7 @@ const OAUTH_ERRORS: Partial<Record<ErrorCode, OAuthError>> = {
   email_not_verified: 'invalid_grant',
   // RFC 8707's code for an audience/resource the server does not know.
   unknown_audience: 'invalid_target',
+  mfa_required: 'mfa_required',
 }
 
 function oauthError(c: Context, err: unknown, usedBasic = false): Response {

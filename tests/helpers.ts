@@ -154,6 +154,7 @@ export function makeTestDeps(
       sessionRepo,
       authCodeRepo,
       logger: testLogger,
+      totp: totpService,
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,

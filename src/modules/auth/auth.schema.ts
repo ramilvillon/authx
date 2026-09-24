@@ -59,6 +59,11 @@ export const oauthErrorSchema = z.object({
     'invalid_grant',
     'unsupported_grant_type',
     'invalid_target',
+    // Not RFC 6749: an extension code (section 5.2 allows them), the one
+    // Auth0 uses. Distinct from invalid_grant, which client libraries read as
+    // "bad credentials, start over" -- this one means "right password, finish
+    // in the browser".
+    'mfa_required',
   ]),
   error_description: z.string(),
 })
