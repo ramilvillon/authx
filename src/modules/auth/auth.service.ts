@@ -506,8 +506,11 @@ export function createAuthService(deps: {
       if (loginAttempts.isLocked(userId)) {
         throw AppError.of('invalid_credentials')
       }
+      // Counted BEFORE the await: requests in flight together must each see
+      // the others' attempts, or a burst walks straight past the limit. A
+      // correct code clears the count below.
+      loginAttempts.recordFailure(userId)
       if (!(await deps.totp.verify(userId, code))) {
-        loginAttempts.recordFailure(userId)
         throw AppError.of('invalid_credentials')
       }
       loginAttempts.clear(userId)

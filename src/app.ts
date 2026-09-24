@@ -52,6 +52,12 @@ export function createApp(deps: Deps) {
       '/oauth/authorize',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
+    // Hono matches a .use path exactly, so the code step needs its own entry;
+    // same prefix, so it shares the one per-IP login budget.
+    .use(
+      '/oauth/authorize/totp',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
     .use(
       '/verify-email/resend',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
