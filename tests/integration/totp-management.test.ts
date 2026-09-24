@@ -11,6 +11,7 @@ import {
 import { signAccessToken } from '../../src/lib/jwt.ts'
 
 const PASSWORD = 'pw123456'
+const PW = { current_password: PASSWORD }
 
 async function setup(env: Record<string, string> = {}) {
   const ctx = makeTestApp(env)
@@ -32,7 +33,7 @@ async function setup(env: Record<string, string> = {}) {
 }
 
 async function enroll(ctx: Awaited<ReturnType<typeof setup>>) {
-  const start = await ctx.call('POST', '/users/me/totp')
+  const start = await ctx.call('POST', '/users/me/totp', PW)
   assertEquals(start.status, 200)
   const { secret } = await start.json()
   const confirm = await ctx.call('POST', '/users/me/totp/confirm', {
@@ -52,12 +53,12 @@ Deno.test('setup -> confirm -> disable over HTTP', async () => {
   const ctx = await setup()
   const { secret, recovery_codes } = await enroll(ctx)
   assertEquals(recovery_codes.length, 10)
-  assertEquals((await ctx.call('POST', '/users/me/totp')).status, 409)
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 409)
   const off = await ctx.call('DELETE', '/users/me/totp', {
     code: await totpCode(secret, 1),
   })
   assertEquals(off.status, 204)
-  assertEquals((await ctx.call('POST', '/users/me/totp')).status, 200)
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 200)
 })
 
 Deno.test('confirm with a wrong code is 400; without a setup it is 404', async () => {
@@ -67,7 +68,7 @@ Deno.test('confirm with a wrong code is 400; without a setup it is 404', async (
       .status,
     404,
   )
-  await ctx.call('POST', '/users/me/totp')
+  await ctx.call('POST', '/users/me/totp', PW)
   const res = await ctx.call('POST', '/users/me/totp/confirm', { code: 'abc' })
   assertEquals(res.status, 400)
   assertEquals((await res.json()).error.code, 'totp_invalid_code')
@@ -127,7 +128,7 @@ Deno.test('self-service routes are 404 when TOTP_ENCRYPTION_KEY is unset; operat
     })).status,
     204,
   )
-  assertEquals((await ctx.call('POST', '/users/me/totp')).status, 404)
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 404)
   assertEquals(
     (await ctx.call('POST', '/users/me/totp/confirm', { code: '123456' }))
       .status,
@@ -165,7 +166,7 @@ Deno.test('admin reset needs users:update:any on a platform token', async () => 
     headers: { Authorization: `Bearer ${admin}` },
   })
   assertEquals(ok.status, 204)
-  assertEquals((await ctx.call('POST', '/users/me/totp')).status, 200)
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 200)
 })
 
 Deno.test('a service token gets 404 from the /users/me/totp routes', async () => {
@@ -185,7 +186,8 @@ Deno.test('a service token gets 404 from the /users/me/totp routes', async () =>
   assertEquals(
     (await app.request('/users/me/totp', {
       method: 'POST',
-      headers: { Authorization },
+      headers: { Authorization, 'content-type': 'application/json' },
+      body: JSON.stringify(PW),
     })).status,
     404,
   )
@@ -205,5 +207,36 @@ Deno.test('a user cannot use the admin route on themselves', async () => {
   const res = await ctx.call('DELETE', `/users/${ctx.user.id}/totp`)
   assertEquals(res.status, 403)
   // Still enabled: setup again is refused.
-  assertEquals((await ctx.call('POST', '/users/me/totp')).status, 409)
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 409)
+})
+
+Deno.test('starting setup needs the current password, not just a token', async () => {
+  const ctx = await setup()
+  // Any app the user signed into holds a bearer token; without this a stolen
+  // one could enrol its own authenticator and lock the owner out.
+  assertEquals((await ctx.call('POST', '/users/me/totp', {})).status, 400)
+  assertEquals(
+    (await ctx.call('POST', '/users/me/totp', { current_password: 'wrong-pw' }))
+      .status,
+    401,
+  )
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 200)
+})
+
+Deno.test('wrong passwords on setup share the password-change throttle', async () => {
+  const ctx = await setup()
+  const wrong = { current_password: 'wrong-pw' }
+  for (let i = 0; i < 3; i++) {
+    assertEquals((await ctx.call('POST', '/users/me/totp', wrong)).status, 401)
+  }
+  for (let i = 0; i < 2; i++) {
+    assertEquals(
+      (await ctx.call('PATCH', `/users/${ctx.user.id}`, {
+        password: 'new-pw-123456',
+        current_password: 'wrong-pw',
+      })).status,
+      401,
+    )
+  }
+  assertEquals((await ctx.call('POST', '/users/me/totp', PW)).status, 429)
 })

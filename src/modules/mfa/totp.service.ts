@@ -2,6 +2,7 @@ import type { TotpRecord, TotpRepository } from './totp.repository.ts'
 import type { UserRepository } from '../users/users.repository.ts'
 import { AppError } from '../../lib/errors.ts'
 import { hashToken } from '../../lib/tokens.ts'
+import { verifyPassword } from '../../lib/password.ts'
 import {
   generateRecoveryCodes,
   generateSecret,
@@ -73,10 +74,23 @@ export function createTotpService(deps: {
 
     async startSetup(
       userId: string,
+      currentPassword: string,
     ): Promise<{ secret: string; otpauth_uri: string }> {
       const k = await requireKey()
       const user = await userRepo.findById(userId)
       if (!user) throw AppError.of('user_not_found')
+      if (user.email === null) throw AppError.of('totp_guest_forbidden')
+      // A bearer token is held by every app the user signed into, and this
+      // token may be for any of them. Without a password, a stolen one could
+      // enrol its own authenticator, keep the recovery codes, and lock the
+      // owner out. Same rule as a password change: a null hash (Google-only
+      // account) has nothing to prove against, so it is refused too.
+      if (
+        user.passwordHash === null ||
+        !await verifyPassword(currentPassword, user.passwordHash)
+      ) {
+        throw AppError.of('invalid_credentials')
+      }
       if ((await totpRepo.find(userId))?.enabledAt) {
         throw AppError.of('totp_already_enabled')
       }

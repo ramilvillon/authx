@@ -130,6 +130,13 @@ export const ERRORS = {
       'no two-factor setup in progress; start one with POST /users/me/totp',
   },
   totp_invalid_code: { status: 400, message: 'that code is not valid' },
+  // A guest signs in only through the password grant, which refuses TOTP
+  // users; TOTP on a guest would be a self-inflicted lockout.
+  totp_guest_forbidden: {
+    status: 403,
+    message:
+      'guest accounts cannot use two-factor authentication; add an email address first',
+  },
   forbidden: { status: 403, message: 'forbidden' },
 } as const
 

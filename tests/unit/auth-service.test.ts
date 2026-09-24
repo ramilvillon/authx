@@ -48,6 +48,7 @@ function setup(opts: {
     verificationRepo: createInMemoryVerificationTokenRepository(),
     socialRepo: createInMemorySocialAccountRepository(),
     orgRepo,
+    totpRepo: createInMemoryTotpRepository(),
     allowPasswordGrant: true,
   })
   const authService = createAuthService({

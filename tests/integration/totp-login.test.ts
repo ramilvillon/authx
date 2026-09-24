@@ -39,6 +39,7 @@ async function enroll(ctx: Awaited<ReturnType<typeof setup>>) {
   const { secret } = await (await ctx.app.request('/users/me/totp', {
     method: 'POST',
     headers,
+    body: JSON.stringify({ current_password: PASSWORD }),
   })).json()
   const { recovery_codes } =
     await (await ctx.app.request('/users/me/totp/confirm', {

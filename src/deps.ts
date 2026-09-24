@@ -91,6 +91,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
       verificationRepo,
       socialRepo,
       orgRepo,
+      totpRepo,
       allowPasswordGrant: config.allowPasswordGrant,
     }),
     authService: createAuthService({
