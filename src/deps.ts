@@ -33,6 +33,10 @@ import {
   type TotpService,
 } from './modules/mfa/totp.service.ts'
 import { createDrizzlePasskeyRepository } from './modules/passkeys/passkey.repository.drizzle.ts'
+import {
+  createPasskeyService,
+  type PasskeyService,
+} from './modules/passkeys/passkey.service.ts'
 
 export type Deps = {
   config: Config
@@ -43,6 +47,7 @@ export type Deps = {
   rateStore: RateLimitStore
   verificationService: VerificationService
   totpService: TotpService
+  passkeyService: PasskeyService
 }
 
 export async function createDeps(config: Config, db: Database): Promise<Deps> {
@@ -61,6 +66,12 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
     userRepo,
     issuer: config.issuer,
     encryptionKey: config.totpEncryptionKey,
+  })
+  const passkeyService = createPasskeyService({
+    passkeyRepo,
+    userRepo,
+    rpId: config.webauthn.rpId,
+    origin: config.webauthn.origin,
   })
   // SMTP_HOST is the switch. Unset means local development, where the log
   // sender plus EMAIL_LOG_LINKS=true is enough to click through a flow.
@@ -113,6 +124,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
     totpService,
+    passkeyService,
   }
 }
 

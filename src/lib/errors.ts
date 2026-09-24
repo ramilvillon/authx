@@ -144,6 +144,24 @@ export const ERRORS = {
     message:
       'guest accounts cannot use two-factor authentication; add an email address first',
   },
+  // 404, like totp_not_configured: an unconfigured capability looks absent.
+  passkey_not_configured: {
+    status: 404,
+    message: 'passkeys are not configured',
+  },
+  // One code for every verification failure (unknown credential, bad
+  // signature, used or expired challenge, counter): which check failed is
+  // nothing a caller can act on, and telling them helps only an attacker.
+  passkey_invalid: { status: 401, message: "that passkey couldn't be used" },
+  passkey_limit_reached: {
+    status: 409,
+    message: 'this account already has the maximum number of passkeys (20)',
+  },
+  passkey_already_registered: {
+    status: 409,
+    message: 'this passkey is already registered',
+  },
+  passkey_not_found: { status: 404, message: 'passkey not found' },
   forbidden: { status: 403, message: 'forbidden' },
 } as const
 

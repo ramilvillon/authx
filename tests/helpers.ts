@@ -24,6 +24,7 @@ import { createDrizzleTotpRepository } from '../src/modules/mfa/totp.repository.
 import { createTotpService } from '../src/modules/mfa/totp.service.ts'
 import { createInMemoryPasskeyRepository } from '../src/modules/passkeys/passkey.repository.ts'
 import { createDrizzlePasskeyRepository } from '../src/modules/passkeys/passkey.repository.drizzle.ts'
+import { createPasskeyService } from '../src/modules/passkeys/passkey.service.ts'
 import { currentStep, fromBase32, hotp } from '../src/lib/totp.ts'
 import { createVerificationService } from '../src/modules/verification/verification.service.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
@@ -135,6 +136,12 @@ export function makeTestDeps(
     issuer: config.issuer,
     encryptionKey: config.totpEncryptionKey,
   })
+  const passkeyService = createPasskeyService({
+    passkeyRepo,
+    userRepo,
+    rpId: config.webauthn.rpId,
+    origin: config.webauthn.origin,
+  })
   const deps: Deps = {
     config,
     keySet,
@@ -167,6 +174,7 @@ export function makeTestDeps(
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
     totpService,
+    passkeyService,
   }
   return {
     deps,
@@ -204,9 +212,14 @@ export function makeTestApp(envOverrides: Record<string, string> = {}) {
     totpRepo,
     passkeyRepo,
     totpService: deps.totpService,
+    passkeyService: deps.passkeyService,
     sentEmails,
   }
 }
+
+// Passkeys are off in tests unless asked for: turning them on changes every
+// password login (the enrolment offer), which most tests do not expect.
+export const PASSKEY_ENV = { WEBAUTHN_RP_ID: 'test.local' }
 
 // Seeds a default org + service and adds userId as a member.
 // Returns the audience string so callers can pass it to authHeader/passwordGrant.
