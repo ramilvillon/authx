@@ -38,6 +38,11 @@ import type { Logger } from '../src/lib/logger.ts'
 const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
 export const keySet = await loadKeyRing(privateKeyPem, publicKeyPem, [])
 
+// A fixed key: tests that need TOTP off override it with ''.
+export const TEST_TOTP_KEY = btoa(
+  String.fromCharCode(...new Uint8Array(32).fill(7)),
+)
+
 // A stand-in for pino's Logger -- these tests never assert on log output,
 // they just need something with an `.error` method to satisfy
 // exchangeGoogleAuthCode's signature.
@@ -51,6 +56,7 @@ const testEnv = {
   JWT_PUBLIC_KEY: publicKeyPem,
   JWT_ISSUER: 'http://test.local',
   LOG_LEVEL: 'silent',
+  TOTP_ENCRYPTION_KEY: TEST_TOTP_KEY,
 }
 
 export type TestContext = {
