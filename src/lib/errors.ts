@@ -107,6 +107,29 @@ export const ERRORS = {
     message:
       'csrf token missing or does not match; GET /oauth/authorize first and submit the csrf_token it renders along with its cookie',
   },
+  // Only ever sent after the password was proven, so it reveals nothing to
+  // someone who does not know it (same reasoning as email_not_verified).
+  mfa_required: {
+    status: 403,
+    message:
+      'this account uses two-factor authentication; sign in through the browser (authorization code flow)',
+  },
+  // 404, matching google_login_disabled: a capability the deployment has not
+  // enabled should not be distinguishable from one that does not exist.
+  totp_not_configured: {
+    status: 404,
+    message: 'two-factor authentication is not configured',
+  },
+  totp_already_enabled: {
+    status: 409,
+    message: 'two-factor authentication is already enabled',
+  },
+  totp_not_pending: {
+    status: 404,
+    message:
+      'no two-factor setup in progress; start one with POST /users/me/totp',
+  },
+  totp_invalid_code: { status: 400, message: 'that code is not valid' },
   forbidden: { status: 403, message: 'forbidden' },
 } as const
 

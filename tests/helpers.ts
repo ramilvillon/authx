@@ -19,6 +19,10 @@ import { createInMemoryRbacRepository } from '../src/modules/rbac/rbac.repositor
 import { createInMemorySessionRepository } from '../src/modules/auth/session.repository.ts'
 import { createInMemoryAuthCodeRepository } from '../src/modules/auth/authcode.repository.ts'
 import { createInMemoryVerificationTokenRepository } from '../src/modules/verification/verification.repository.ts'
+import { createInMemoryTotpRepository } from '../src/modules/mfa/totp.repository.ts'
+import { createDrizzleTotpRepository } from '../src/modules/mfa/totp.repository.drizzle.ts'
+import { createTotpService } from '../src/modules/mfa/totp.service.ts'
+import { currentStep, fromBase32, hotp } from '../src/lib/totp.ts'
 import { createVerificationService } from '../src/modules/verification/verification.service.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
 import { createAuthService } from '../src/modules/auth/auth.service.ts'
@@ -69,6 +73,7 @@ export type TestContext = {
   socialRepo: SocialAccountRepository
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
+  totpRepo: ReturnType<typeof createInMemoryTotpRepository>
   sentEmails: { to: string; purpose: TokenPurpose; link: string }[]
 }
 
@@ -115,6 +120,15 @@ export function makeTestDeps(
   const socialRepo = testDb
     ? createDrizzleSocialAccountRepository(testDb)
     : createInMemorySocialAccountRepository()
+  const totpRepo = testDb
+    ? createDrizzleTotpRepository(testDb)
+    : createInMemoryTotpRepository()
+  const totpService = createTotpService({
+    totpRepo,
+    userRepo,
+    issuer: config.issuer,
+    encryptionKey: config.totpEncryptionKey,
+  })
   const deps: Deps = {
     config,
     keySet,
@@ -143,6 +157,7 @@ export function makeTestDeps(
     }),
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
+    totpService,
   }
   return {
     deps,
@@ -154,19 +169,28 @@ export function makeTestDeps(
     socialRepo,
     orgRepo,
     rbacRepo,
+    totpRepo,
     sentEmails,
   }
 }
 
 export function makeTestApp(envOverrides: Record<string, string> = {}) {
-  const { deps, userRepo, socialRepo, orgRepo, rbacRepo, sentEmails } =
-    makeTestDeps(envOverrides)
+  const {
+    deps,
+    userRepo,
+    socialRepo,
+    orgRepo,
+    rbacRepo,
+    totpRepo,
+    sentEmails,
+  } = makeTestDeps(envOverrides)
   return {
     app: createApp(deps),
     userRepo,
     socialRepo,
     orgRepo,
     rbacRepo,
+    totpRepo,
     sentEmails,
   }
 }
@@ -409,4 +433,12 @@ export function stubGoogleToken(
     throw new Error(`unexpected fetch to ${url}`)
   }) as typeof fetch
   return { calls, bodies, restore: () => globalThis.fetch = real }
+}
+
+// The code an authenticator app would show now (+offset steps). Replay
+// protection makes a used step unusable: confirm with offset 0, then use +1
+// for the next TOTP in the same test -- never -1 (a clock rollover between
+// generating and verifying would push it out of the window).
+export function totpCode(secretB32: string, offset = 0): Promise<string> {
+  return hotp(fromBase32(secretB32), currentStep() + offset)
 }
