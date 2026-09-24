@@ -261,6 +261,8 @@ Deno.test('hosted login: an access token in the challenge cookie is refused', as
     forged,
   )
   assertEquals(res.status, 401)
+  // 401 alone would also fit a wrong code: this must be the challenge refusal.
+  assertStringIncludes(await res.text(), 'Your sign-in timed out')
 })
 
 Deno.test('the MFA challenge is not an access token', async () => {
@@ -298,4 +300,66 @@ Deno.test('hosted login: a user without TOTP is unaffected', async () => {
   const res = await submitLoginForm(ctx.app, await loginFields(ctx))
   assertEquals(res.status, 302)
   assert(cookieNames(res).includes('authx_session'))
+})
+
+// A code page's cookies and fields, as reusable posts of one code each.
+async function codePage(ctx: Awaited<ReturnType<typeof hostedSetup>>) {
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  assertEquals(page.status, 200)
+  const cookie = page.headers.getSetCookie().map((c) => c.split(';')[0]).join(
+    '; ',
+  )
+  const html = await page.text()
+  return (code: string) =>
+    ctx.app.request('/oauth/authorize/totp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+      body: new URLSearchParams({ ...hiddenFields(html), code }).toString(),
+      redirect: 'manual',
+    })
+}
+
+const WRONG = 'AAAA-AAAA-AAAA-AAAA'
+const LOCKOUT_ENV = { LOGIN_MAX_FAILURES: '3', LOGIN_LOCKOUT_MS: '60000' }
+
+// The password alone must not end a run of failed codes: otherwise anyone
+// holding it re-submits it every few guesses and guesses codes forever.
+Deno.test('hosted login: a correct password does not reset the code-guess count', async () => {
+  const ctx = await hostedSetup(LOCKOUT_ENV)
+  const { recovery_codes } = await enroll(ctx)
+  const first = await codePage(ctx)
+  for (let i = 0; i < 2; i++) assertEquals((await first(WRONG)).status, 401)
+  // The password again, on the form (a new challenge)...
+  const second = await codePage(ctx)
+  assertEquals((await second(WRONG)).status, 401)
+  // ...that was the third failure: locked, so even a valid code is refused.
+  const res = await second(recovery_codes[0])
+  assertEquals(res.status, 401)
+  assertStringIncludes(await res.text(), 'That code is not valid')
+})
+
+Deno.test('password grant: mfa_required does not reset the code-guess count', async () => {
+  const ctx = await hostedSetup(LOCKOUT_ENV)
+  const { recovery_codes } = await enroll(ctx)
+  const post = await codePage(ctx)
+  for (let i = 0; i < 2; i++) assertEquals((await post(WRONG)).status, 401)
+  assertEquals(
+    (await (await passwordGrant(ctx, PASSWORD)).json()).error,
+    'mfa_required',
+  )
+  assertEquals((await post(WRONG)).status, 401)
+  assertEquals((await post(recovery_codes[0])).status, 401)
+})
+
+Deno.test('hosted login: a lockout from wrong passwords also blocks the code page', async () => {
+  const ctx = await hostedSetup(LOCKOUT_ENV)
+  const { recovery_codes } = await enroll(ctx)
+  const post = await codePage(ctx)
+  for (let i = 0; i < 3; i++) {
+    assertEquals(
+      (await (await passwordGrant(ctx, 'wrong-password')).json()).error,
+      'invalid_grant',
+    )
+  }
+  assertEquals((await post(recovery_codes[0])).status, 401)
 })

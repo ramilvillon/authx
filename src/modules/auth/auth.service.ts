@@ -69,6 +69,11 @@ export function createAuthService(deps: {
   // A locked account still pays the hash cost and answers with the SAME error
   // as a wrong password. A distinct code would be an enumeration oracle:
   // unknown accounts are never tracked, so "locked" would mean "exists".
+  //
+  // A correct password does NOT clear the failure count: the count is shared
+  // with TOTP codes, and a password holder who could reset it by signing in
+  // again could guess codes forever. It clears only once a login completes
+  // (passwordGrant's non-MFA path, finishLogin, completeMfaLogin).
   async function authenticatePassword(
     user: UserRecord | null,
     password: string,
@@ -87,7 +92,6 @@ export function createAuthService(deps: {
       if (user && !locked) loginAttempts.recordFailure(user.id)
       throw AppError.of('invalid_credentials')
     }
-    loginAttempts.clear(user.id)
     return user
   }
 
@@ -226,6 +230,7 @@ export function createAuthService(deps: {
   // login path (password, Google) ends here, so one check covers them all.
   async function finishLogin(userId: string): Promise<LoginResult> {
     if (await deps.totp.isEnabled(userId)) return { kind: 'mfa', userId }
+    loginAttempts.clear(userId)
     return { kind: 'session', ...(await createSession(userId)) }
   }
 
@@ -253,6 +258,7 @@ export function createAuthService(deps: {
       // The grant cannot carry a second factor; TOTP is entered on the hosted
       // login page only.
       if (await deps.totp.isEnabled(user.id)) throw AppError.of('mfa_required')
+      loginAttempts.clear(user.id)
       return issueTokensForService(user.id, audience)
     },
     async refreshGrant(
