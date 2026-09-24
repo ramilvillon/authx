@@ -12,7 +12,7 @@ export const ERRORS = {
   invalid_credentials: { status: 401, message: 'invalid credentials' },
   current_password_required: {
     status: 400,
-    message: 'current_password is required to change a password',
+    message: 'current_password is required',
   },
   invalid_refresh_token: { status: 401, message: 'invalid refresh token' },
   refresh_token_reuse: { status: 401, message: 'refresh token reuse detected' },
@@ -132,6 +132,13 @@ export const ERRORS = {
   totp_invalid_code: { status: 400, message: 'that code is not valid' },
   // A guest signs in only through the password grant, which refuses TOTP
   // users; TOTP on a guest would be a self-inflicted lockout.
+  // A passwordless (Google-only) account proves itself by signing in again:
+  // /oauth/authorize with prompt=login, then retry with the new token.
+  fresh_login_required: {
+    status: 403,
+    message:
+      'sign in again (prompt=login) and retry within 5 minutes of signing in',
+  },
   totp_guest_forbidden: {
     status: 403,
     message:

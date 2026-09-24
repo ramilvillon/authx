@@ -101,11 +101,12 @@ They sign in with a password or Google, you get `?code=` back, and you exchange
 it at `/oauth/token`. Add `scope=openid email profile` to get an `id_token`.
 
 **Two-factor (TOTP).** Set `TOTP_ENCRYPTION_KEY`, then users turn it on with
-`POST /users/me/totp` with their `current_password` (show the returned
-`otpauth_uri` as a QR code) and `POST /users/me/totp/confirm`, which returns ten
-one-time recovery codes. From then on the hosted login page asks for a code
-after the password or Google, and the password grant answers `mfa_required`. See
-the [API reference](docs/api.md).
+`POST /users/me/totp` with their `current_password`, or a Google-only user right
+after a `prompt=login` sign-in (show the returned `otpauth_uri` as a QR code)
+and `POST /users/me/totp/confirm`, which returns ten one-time recovery codes.
+From then on the hosted login page asks for a code after the password or Google,
+and the password grant answers `mfa_required`. See the
+[API reference](docs/api.md).
 
 **Service to service.** A confidential service trades its credentials for a
 short-lived token scoped to the target service:

@@ -1,8 +1,7 @@
-import { hashPassword } from '../../src/lib/password.ts'
 import { assert, assertEquals, assertStringIncludes } from '@std/assert'
 import { makeTestApp, submitTotpForm, totpCode } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
-import { verifyAccessToken } from '../../src/lib/jwt.ts'
+import { signAccessToken, verifyAccessToken } from '../../src/lib/jwt.ts'
 import { keySet } from '../helpers.ts'
 
 // Google login is a step of the authorize flow: the login page links to
@@ -362,15 +361,12 @@ Deno.test('GET /oauth/google refuses a callback whose state does not match the c
 Deno.test('a Google sign-in of a TOTP user asks for the code before any session', async () => {
   const ctx = makeTestApp(GOOGLE_ENV)
   const user = await seed(ctx)
-  // Enroll directly, with a password set just for the purpose: enrolment
-  // needs one, and this Google user has none.
-  await ctx.userRepo.update(user.id, {
-    passwordHash: await hashPassword('pw123456'),
+  // Enroll directly, as if just signed in: this user is passwordless, so a
+  // fresh sign-in is its proof.
+  const { secret } = await ctx.totpService.startSetup(user.id, {
+    authTime: Math.floor(Date.now() / 1000),
   })
-  const { secret } = await ctx.totpService.startSetup(user.id, 'pw123456')
   await ctx.totpService.confirm(user.id, await totpCode(secret))
-  // Back to passwordless, or the Google path refuses the account outright.
-  await ctx.userRepo.update(user.id, { passwordHash: null })
   const { cookie, state } = await start(ctx.app)
 
   const google = stubGoogle(PROFILE)
@@ -396,4 +392,104 @@ Deno.test('a Google sign-in of a TOTP user asks for the code before any session'
     new URL(res.headers.get('location')!).searchParams.get('state'),
     'app-state',
   )
+})
+
+// A full Google sign-in through the authorize flow, redeemed for tokens.
+async function googleSignIn(ctx: ReturnType<typeof makeTestApp>) {
+  const { cookie, state } = await start(ctx.app)
+  const google = stubGoogle(PROFILE)
+  let res: Response
+  try {
+    res = await ctx.app.request(`/oauth/google?code=good-code&state=${state}`, {
+      headers: { cookie },
+    })
+  } finally {
+    google.restore()
+  }
+  assertEquals(res.status, 302)
+  const code = new URL(res.headers.get('location')!).searchParams.get('code')
+  const pair = await (await ctx.app.request('/oauth/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: VERIFIER,
+      client_id: 'cid_app',
+    }),
+  })).json()
+  return { pair, session: cookieHeader(res) }
+}
+
+const startTotp = (
+  app: ReturnType<typeof makeTestApp>['app'],
+  accessToken: string,
+) =>
+  app.request('/users/me/totp', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  })
+
+Deno.test('a Google-only user enrols TOTP with a token from a fresh sign-in', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const user = await seed(ctx)
+  const { pair } = await googleSignIn(ctx)
+  const claims = await verifyAccessToken(pair.access_token, keySet.publicKeyPem)
+  assert(typeof claims.auth_time === 'number')
+  const res = await startTotp(ctx.app, pair.access_token)
+  assertEquals(res.status, 200)
+  const { secret } = await res.json()
+  await ctx.totpService.confirm(user.id, await totpCode(secret))
+  assert(await ctx.totpService.isEnabled(user.id))
+})
+
+Deno.test('a Google-only user with a stale or refreshed token must sign in again', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const user = await seed(ctx)
+  const mint = (authTime?: Date) =>
+    signAccessToken({
+      sub: user.id,
+      issuer: 'http://test.local',
+      privateKeyPem: keySet.privateKeyPem,
+      kid: keySet.kid,
+      ttlSeconds: 900,
+      aud: 'acme-app',
+      org: 'acme',
+      scope: '',
+      clientId: 'cid_app',
+      subType: 'user',
+      authTime,
+    })
+  // Signed in ten minutes ago: a token stolen from that session must not
+  // be able to enrol the thief's authenticator.
+  const stale = await startTotp(
+    ctx.app,
+    await mint(new Date(Date.now() - 10 * 60 * 1000)),
+  )
+  assertEquals(stale.status, 403)
+  assertEquals((await stale.json()).error.code, 'fresh_login_required')
+  // A refreshed token carries no auth_time at all.
+  assertEquals((await startTotp(ctx.app, await mint())).status, 403)
+})
+
+Deno.test('prompt=login shows the login page even with a live SSO session', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const { session } = await googleSignIn(ctx)
+  const reuse = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery()}`,
+    { headers: { cookie: session } },
+  )
+  assertEquals(reuse.status, 302)
+  const forced = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery({ prompt: 'login' })}`,
+    { headers: { cookie: session } },
+  )
+  assertEquals(forced.status, 200)
+  assertStringIncludes(await forced.text(), '<form')
 })
