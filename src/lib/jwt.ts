@@ -106,6 +106,10 @@ export async function verifyWithKeyRing(
 // too. All it grants is the right to TRY codes, which the per-account lockout
 // and the replay guard bound.
 export const MFA_CHALLENGE_AUD = 'authx:mfa-challenge'
+// The audience alone is not enough: a service registered with audience
+// 'authx:mfa-challenge' would get access tokens carrying it. Access tokens
+// never carry this typ.
+const MFA_CHALLENGE_TYP = 'mfa-challenge'
 
 export async function signMfaChallenge(opts: {
   sub: string
@@ -121,6 +125,7 @@ export async function signMfaChallenge(opts: {
       iss: opts.issuer,
       sub: opts.sub,
       aud: MFA_CHALLENGE_AUD,
+      typ: MFA_CHALLENGE_TYP,
       iat: now,
       exp: now + opts.ttlSeconds,
     },
@@ -139,7 +144,8 @@ export async function verifyMfaChallenge(
       string,
       unknown
     >
-    return claims.aud === MFA_CHALLENGE_AUD && typeof claims.sub === 'string'
+    return claims.aud === MFA_CHALLENGE_AUD &&
+        claims.typ === MFA_CHALLENGE_TYP && typeof claims.sub === 'string'
       ? claims.sub
       : null
   } catch {

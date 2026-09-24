@@ -2,6 +2,7 @@ import { assertEquals } from '@std/assert'
 import { sign } from 'hono/jwt'
 import {
   decode,
+  MFA_CHALLENGE_AUD,
   signAccessToken,
   signMfaChallenge,
   verifyAccessToken,
@@ -164,6 +165,24 @@ Deno.test('an access token is not an MFA challenge', async () => {
     kid: keySet.kid,
     ttlSeconds: 900,
     aud: 'some-service',
+    org: 'o',
+    scope: '',
+    clientId: 'c',
+    subType: 'user',
+  })
+  assertEquals(await verifyMfaChallenge(access, keySet), null)
+})
+
+// A service registered with audience 'authx:mfa-challenge' gets access tokens
+// carrying that aud; they must still not pass as a challenge.
+Deno.test('an access token with the challenge audience is not a challenge', async () => {
+  const access = await signAccessToken({
+    sub: 'u-1',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: MFA_CHALLENGE_AUD,
     org: 'o',
     scope: '',
     clientId: 'c',
