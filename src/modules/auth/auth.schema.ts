@@ -82,6 +82,8 @@ export const authorizeQuerySchema = z.object({
   scope: z.string().default(''),
   state: z.string().optional(),
   nonce: z.string().optional(),
+  // OIDC: only 'login' is acted on (sign in again even with a live session).
+  prompt: z.string().optional(),
   code_challenge: z.string().min(1),
   code_challenge_method: z.literal('S256'),
 })

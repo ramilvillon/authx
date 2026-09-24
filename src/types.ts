@@ -4,4 +4,6 @@ export type AuthenticatedUser = {
   permissions: string[]
   org: string
   aud: string
+  // Seconds; see AccessClaims.auth_time.
+  authTime?: number
 }

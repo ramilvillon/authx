@@ -457,7 +457,10 @@ const auth = new Hono<AppEnv>()
         codeChallengeMethod: q.code_challenge_method,
       })
       const sessionToken = getCookie(c, SESSION_COOKIE)
-      const session = sessionToken
+      // prompt=login is how an app gets a fresh auth_time (for a step-up such
+      // as TOTP enrolment): the session is ignored, not ended.
+      const forceLogin = q.prompt?.split(' ').includes('login')
+      const session = sessionToken && !forceLogin
         ? await c.var.authService.resolveSession(sessionToken)
         : null
       if (!session) return renderLogin(c, q)

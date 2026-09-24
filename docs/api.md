@@ -169,12 +169,19 @@ All four routes require a Bearer token (`requireAuth`); a `client_credentials`
 operator reset `DELETE /users/:id/totp` works with or without the key: it is the
 way back in for users who enrolled before the key was removed.
 
-| endpoint                      | body                                             | success                                                                               | errors                                                                                                                                                                                                                                                                      |
-| ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /users/me/totp`         | `{ current_password }`                           | 200 `{ secret, otpauth_uri }`; creates or overwrites a pending (unconfirmed) setup    | 400 no `current_password` · 401 `invalid_credentials` (wrong password, or a Google-only account with none), throttled with password changes — 429 after 5 per account · 403 `totp_guest_forbidden` (guest account) · 404 `totp_not_configured` · 409 `totp_already_enabled` |
-| `POST /users/me/totp/confirm` | `{ code }`                                       | 200 `{ recovery_codes: string[10] }`, shown once and never again; turns two-factor on | 400 `totp_invalid_code` · 404 `totp_not_pending` (or `totp_not_configured`) · 409 `totp_already_enabled`                                                                                                                                                                    |
-| `DELETE /users/me/totp`       | exactly one of `{ code }` or `{ recovery_code }` | 204; deletes the secret and every recovery code                                       | 400 neither or both sent · 401 `invalid_credentials` (wrong proof), throttled — 429 after 5 wrong proofs per account in the rate-limit window · 404 `totp_not_configured`                                                                                                   |
-| `DELETE /users/:id/totp`      | —                                                | 204; operator reset (idempotent)                                                      | 403 missing `users:update:any` on a platform-audience token                                                                                                                                                                                                                 |
+| endpoint                      | body                                                    | success                                                                               | errors                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /users/me/totp`         | `{ current_password }` (omit for a Google-only account) | 200 `{ secret, otpauth_uri }`; creates or overwrites a pending (unconfirmed) setup    | 400 `current_password_required` · 401 `invalid_credentials` (wrong password), throttled with password changes — 429 after 5 per account · 403 `totp_guest_forbidden` (guest account) or `fresh_login_required` (Google-only account, token not from a sign-in in the last 5 minutes) · 404 `totp_not_configured` · 409 `totp_already_enabled` |
+| `POST /users/me/totp/confirm` | `{ code }`                                              | 200 `{ recovery_codes: string[10] }`, shown once and never again; turns two-factor on | 400 `totp_invalid_code` · 404 `totp_not_pending` (or `totp_not_configured`) · 409 `totp_already_enabled`                                                                                                                                                                                                                                      |
+| `DELETE /users/me/totp`       | exactly one of `{ code }` or `{ recovery_code }`        | 204; deletes the secret and every recovery code                                       | 400 neither or both sent · 401 `invalid_credentials` (wrong proof), throttled — 429 after 5 wrong proofs per account in the rate-limit window · 404 `totp_not_configured`                                                                                                                                                                     |
+| `DELETE /users/:id/totp`      | —                                                       | 204; operator reset (idempotent)                                                      | 403 missing `users:update:any` on a platform-audience token                                                                                                                                                                                                                                                                                   |
+
+**Google-only accounts** have no password to send. For them the proof is a
+recent sign-in: send the user through `/oauth/authorize` with `prompt=login`
+(which skips the SSO session and shows the sign-in page), exchange the code, and
+call `POST /users/me/totp` with that new access token within 5 minutes. Tokens
+from an authorization code carry `auth_time`; refreshed tokens do not, so they
+never count as fresh.
 
 A code is accepted once: right after confirming, wait for the next code before
 signing in — the code used to confirm cannot also sign in.
@@ -331,6 +338,10 @@ authorization request scope:
 GET /oauth/authorize?client_id=…&redirect_uri=…&scope=openid+email+profile
   &code_challenge=…&code_challenge_method=S256&state=…&nonce=<nonce>
 ```
+
+`prompt=login` makes the user sign in again even when an SSO session exists
+(other `prompt` values are ignored). Access tokens from the code exchange carry
+the sign-in time as `auth_time`, as the `id_token` does.
 
 The token exchange (`grant_type=authorization_code`) returns the usual access
 token plus an `id_token` — a signed JWT whose `aud` is the `client_id`. The

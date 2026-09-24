@@ -17,6 +17,9 @@ import {
 
 export type TotpService = ReturnType<typeof createTotpService>
 
+// How recent a sign-in must be to stand in for a password at enrolment.
+const FRESH_LOGIN_SECONDS = 5 * 60
+
 export function createTotpService(deps: {
   totpRepo: TotpRepository
   userRepo: UserRepository
@@ -74,20 +77,29 @@ export function createTotpService(deps: {
 
     async startSetup(
       userId: string,
-      currentPassword: string,
+      proof: { currentPassword?: string; authTime?: number },
     ): Promise<{ secret: string; otpauth_uri: string }> {
       const k = await requireKey()
       const user = await userRepo.findById(userId)
       if (!user) throw AppError.of('user_not_found')
       if (user.email === null) throw AppError.of('totp_guest_forbidden')
       // A bearer token is held by every app the user signed into, and this
-      // token may be for any of them. Without a password, a stolen one could
+      // token may be for any of them. Without more proof, a stolen one could
       // enrol its own authenticator, keep the recovery codes, and lock the
-      // owner out. Same rule as a password change: a null hash (Google-only
-      // account) has nothing to prove against, so it is refused too.
-      if (
-        user.passwordHash === null ||
-        !await verifyPassword(currentPassword, user.passwordHash)
+      // owner out. With a password, that proof is the password. Without one
+      // (Google-only), it is a sign-in in the last few minutes -- a token
+      // stolen inside that window still passes; that is the ceiling.
+      if (user.passwordHash === null) {
+        const age = proof.authTime === undefined
+          ? Infinity
+          : Date.now() / 1000 - proof.authTime
+        if (!(age <= FRESH_LOGIN_SECONDS)) {
+          throw AppError.of('fresh_login_required')
+        }
+      } else if (!proof.currentPassword) {
+        throw AppError.of('current_password_required')
+      } else if (
+        !await verifyPassword(proof.currentPassword, user.passwordHash)
       ) {
         throw AppError.of('invalid_credentials')
       }

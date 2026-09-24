@@ -168,6 +168,7 @@ export function createAuthService(deps: {
     userId: string,
     audience: string,
     oidcScope?: string,
+    authTime?: Date,
   ): Promise<TokenPair> {
     const user = await userRepo.findById(userId)
     if (!user) throw AppError.of('invalid_grant')
@@ -193,6 +194,7 @@ export function createAuthService(deps: {
       clientId: service.clientId,
       oidcScope,
       subType: 'user',
+      authTime,
     })
     const refresh = generateRefreshToken()
     await tokenRepo.create({
@@ -564,6 +566,7 @@ export function createAuthService(deps: {
         record.userId,
         service.audience,
         oidc.length ? oidc.join(' ') : undefined,
+        record.authTime,
       )
       if (!oidc.includes('openid')) return pair
       const user = await userRepo.findById(record.userId)

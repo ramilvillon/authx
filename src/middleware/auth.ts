@@ -37,6 +37,7 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
     permissions: claims.scope ? claims.scope.split(' ') : [],
     org: claims.org,
     aud: claims.aud,
+    authTime: claims.auth_time,
   })
   await next()
 })

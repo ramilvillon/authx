@@ -16,6 +16,9 @@ export type AccessClaims = AccessPayload & {
   // What `sub` identifies: a user row ('user') or an app service ('service',
   // client-credentials). Absent on tokens minted before this claim existed.
   sub_type?: 'user' | 'service'
+  // When the user last actually signed in (seconds). Only on tokens straight
+  // from an authorization code; a refresh is not a sign-in, so it omits it.
+  auth_time?: number
 }
 
 export async function signAccessToken(
@@ -31,6 +34,7 @@ export async function signAccessToken(
     clientId: string
     oidcScope?: string
     subType: 'user' | 'service'
+    authTime?: Date
   },
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -43,6 +47,9 @@ export async function signAccessToken(
     client_id: opts.clientId,
     ...(opts.oidcScope ? { oidc_scope: opts.oidcScope } : {}),
     sub_type: opts.subType,
+    ...(opts.authTime
+      ? { auth_time: Math.floor(opts.authTime.getTime() / 1000) }
+      : {}),
     iat: now,
     exp: now + opts.ttlSeconds,
   }
