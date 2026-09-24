@@ -1,12 +1,14 @@
 import { assertEquals } from '@std/assert'
 import {
   authHeader,
+  keySet,
   makeTestApp,
   PLATFORM_PERMISSIONS,
   seedDefaultService,
   seedPlatformAdmin,
   totpCode,
 } from '../helpers.ts'
+import { signAccessToken } from '../../src/lib/jwt.ts'
 
 const PASSWORD = 'pw123456'
 
@@ -148,6 +150,37 @@ Deno.test('admin reset needs users:update:any on a platform token', async () => 
   })
   assertEquals(ok.status, 204)
   assertEquals((await ctx.call('POST', '/users/me/totp')).status, 200)
+})
+
+Deno.test('a service token gets 404 from the /users/me/totp routes', async () => {
+  const { app } = makeTestApp()
+  const Authorization = `Bearer ${await signAccessToken({
+    sub: 'some-app-service-id',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: 'platform',
+    org: 'platform',
+    scope: 'users:list',
+    clientId: 'cid_m2m',
+    subType: 'service',
+  })}`
+  assertEquals(
+    (await app.request('/users/me/totp', {
+      method: 'POST',
+      headers: { Authorization },
+    })).status,
+    404,
+  )
+  assertEquals(
+    (await app.request('/users/me/totp', {
+      method: 'DELETE',
+      headers: { Authorization, 'content-type': 'application/json' },
+      body: JSON.stringify({ code: '123456' }),
+    })).status,
+    404,
+  )
 })
 
 Deno.test('a user cannot use the admin route on themselves', async () => {

@@ -138,6 +138,14 @@ export function createTotpService(deps: {
 
     async disable(userId: string, proof: string): Promise<void> {
       await requireKey()
+      // Mirrors startSetup: a service token names no user row, so it must get
+      // the same 404 every other /users/me/totp* route gives it, not the
+      // 401 that "verify failed" would produce for a row that never existed.
+      // A 404 here is not counted by throttleFailedTotpProofs (401-only), so
+      // this adds no new way to probe past the limiter.
+      if (!(await userRepo.findById(userId))) {
+        throw AppError.of('user_not_found')
+      }
       if (!(await verify(userId, proof))) {
         throw AppError.of('invalid_credentials')
       }
