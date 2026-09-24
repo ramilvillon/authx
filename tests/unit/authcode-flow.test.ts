@@ -216,10 +216,12 @@ Deno.test('confidential client: replay with wrong secret still revokes token fam
 Deno.test('loginCreateSession + userIdForSession round-trip; bad password throws', async () => {
   const ctx = makeTestDeps()
   const user = await seedUserAndService(ctx)
-  const { token, userId } = await ctx.deps.authService.loginCreateSession(
+  const login = await ctx.deps.authService.loginCreateSession(
     'a@b.com',
     'pw123456',
   )
+  assert(login.kind === 'session')
+  const { token, userId } = login
   assertEquals(userId, user.id)
   assertEquals(await ctx.deps.authService.userIdForSession(token), user.id)
   await ctx.deps.authService.logout(token)

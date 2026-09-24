@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from '@std/assert'
-import { makeTestApp } from '../helpers.ts'
+import { makeTestApp, submitTotpForm, totpCode } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { verifyAccessToken } from '../../src/lib/jwt.ts'
 import { keySet } from '../helpers.ts'
@@ -356,4 +356,38 @@ Deno.test('GET /oauth/google refuses a callback whose state does not match the c
   } finally {
     google.restore()
   }
+})
+
+Deno.test('a Google sign-in of a TOTP user asks for the code before any session', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  const user = await seed(ctx)
+  // Enroll directly: this user is passwordless, so there is no password
+  // grant to mint the API token with.
+  const { secret } = await ctx.totpService.startSetup(user.id)
+  await ctx.totpService.confirm(user.id, await totpCode(secret))
+  const { cookie, state } = await start(ctx.app)
+
+  const google = stubGoogle(PROFILE)
+  let page: Response
+  try {
+    page = await ctx.app.request(
+      `/oauth/google?code=good-code&state=${state}`,
+      {
+        headers: { cookie },
+      },
+    )
+  } finally {
+    google.restore()
+  }
+  assertEquals(page.status, 200)
+  assert(
+    !page.headers.getSetCookie().some((c) => c.startsWith('authx_session=')),
+    'no session before the code',
+  )
+  const res = await submitTotpForm(ctx.app, page, await totpCode(secret, 1))
+  assertEquals(res.status, 302)
+  assertEquals(
+    new URL(res.headers.get('location')!).searchParams.get('state'),
+    'app-state',
+  )
 })

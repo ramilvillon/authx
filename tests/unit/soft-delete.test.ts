@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assert, assertEquals, assertRejects } from '@std/assert'
 import { makeTestDeps, seedDefaultService } from '../helpers.ts'
 
 const days = (n: number) => n * 86400 * 1000
@@ -40,6 +40,7 @@ Deno.test('a soft-deleted user cannot log in, refresh, or resume a session', asy
     'gone2@b.com',
     'pw123456',
   )
+  assert(session.kind === 'session')
 
   await userService.remove(user.id)
 

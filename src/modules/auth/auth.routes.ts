@@ -13,8 +13,12 @@ import {
   revokeSchema,
   tokenPairSchema,
   tokenRequestSchema,
+  totpFormSchema,
 } from './auth.schema.ts'
 import { loginPage } from './login-page.ts'
+import { totpPage } from './totp-page.ts'
+import type { LoginResult } from './auth.service.ts'
+import { signMfaChallenge, verifyMfaChallenge } from '../../lib/jwt.ts'
 import { AppError, type ErrorCode } from '../../lib/errors.ts'
 import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { Context } from 'hono'
@@ -184,6 +188,13 @@ const json = (schema: ReturnType<typeof resolver>) => ({
 
 const SESSION_COOKIE = 'authx_session'
 const CSRF_COOKIE = 'authx_csrf'
+// The signed half-finished login between the first factor and the code.
+// Scoped to /oauth: only /oauth/authorize/totp reads it.
+const MFA_COOKIE = 'authx_mfa'
+const MFA_PATH = '/oauth'
+const MFA_CHALLENGE_TTL = 300
+const MFA_CODE_ERROR = 'That code is not valid. Check your authenticator ' +
+  'app or use a recovery code. After too many attempts, sign-in pauses for a while.'
 // The authorize request a Google login resumes. Google echoes back only `code`
 // and `state`, and `state` belongs to googleAuth, so the request rides in a
 // cookie of our own, scoped to the one route that reads it.
@@ -255,6 +266,35 @@ function renderLogin(
     loginPage({ ...q, csrf_token: csrfToken(c) }, error, googleHref(c, q)),
     status,
   )
+}
+
+function renderTotp(
+  c: Context<AppEnv>,
+  q: AuthorizeQuery,
+  error?: string,
+  status: 200 | 401 = 200,
+) {
+  return c.html(totpPage({ ...q, csrf_token: csrfToken(c) }, error), status)
+}
+
+// First factor done, account has TOTP: no session yet. The challenge cookie
+// says who passed the first factor; the page carries the authorize request.
+async function startMfa(c: Context<AppEnv>, q: AuthorizeQuery, userId: string) {
+  const challenge = await signMfaChallenge({
+    sub: userId,
+    issuer: c.var.config.issuer,
+    privateKeyPem: c.var.keySet.privateKeyPem,
+    kid: c.var.keySet.kid,
+    ttlSeconds: MFA_CHALLENGE_TTL,
+  })
+  setCookie(c, MFA_COOKIE, challenge, {
+    httpOnly: true,
+    secure: secureCookies(c),
+    sameSite: 'Lax',
+    path: MFA_PATH,
+    maxAge: MFA_CHALLENGE_TTL,
+  })
+  return renderTotp(c, q)
 }
 
 function pendingGoogleAuthorize(c: Context<AppEnv>): AuthorizeQuery | null {
@@ -465,7 +505,7 @@ const auth = new Hono<AppEnv>()
         codeChallenge: f.code_challenge,
         codeChallengeMethod: f.code_challenge_method,
       })
-      let login: { token: string; userId: string }
+      let login: LoginResult
       try {
         login = await c.var.authService.loginCreateSession(f.email, f.password)
       } catch (err) {
@@ -482,6 +522,65 @@ const auth = new Hono<AppEnv>()
         }
         return renderLogin(c, f, 'Invalid email or password', 401)
       }
+      if (login.kind === 'mfa') return startMfa(c, f, login.userId)
+      setSessionCookie(c, login.token)
+      const code = await c.var.authService.issueAuthorizationCode(
+        login.userId,
+        service,
+        {
+          redirectUri: f.redirect_uri,
+          scope: f.scope,
+          codeChallenge: f.code_challenge,
+          codeChallengeMethod: f.code_challenge_method,
+          nonce: f.nonce,
+          authTime: new Date(),
+        },
+      )
+      return c.redirect(redirectTo(f.redirect_uri, { code, state: f.state }))
+    },
+  )
+  .post(
+    '/authorize/totp',
+    validator('form', totpFormSchema),
+    async (c) => {
+      const f = c.req.valid('form')
+      const presented = getCookie(c, CSRF_COOKIE)
+      if (!presented || f.csrf_token !== presented) {
+        // Same handling as POST /authorize.
+        if (!c.req.header('accept')?.includes('text/html')) {
+          throw AppError.of('csrf_token_invalid')
+        }
+        return renderLogin(
+          c,
+          f,
+          'This sign-in form is no longer valid. Please try again.',
+          403,
+        )
+      }
+      // Re-checked rather than trusted: the fields came back from the browser.
+      const service = await c.var.authService.validateAuthorizeRequest({
+        clientId: f.client_id,
+        redirectUri: f.redirect_uri,
+        codeChallenge: f.code_challenge,
+        codeChallengeMethod: f.code_challenge_method,
+      })
+      const userId = await verifyMfaChallenge(
+        getCookie(c, MFA_COOKIE) ?? '',
+        c.var.keySet,
+      )
+      const timedOut = () =>
+        renderLogin(c, f, 'Your sign-in timed out. Please sign in again.', 401)
+      if (!userId) return timedOut()
+      let login: { token: string; userId: string }
+      try {
+        login = await c.var.authService.completeMfaLogin(userId, f.code)
+      } catch (err) {
+        if (!(err instanceof AppError)) throw err
+        // invalid_grant: the account went away while the challenge was live.
+        if (err.code === 'invalid_grant') return timedOut()
+        return renderTotp(c, f, MFA_CODE_ERROR, 401)
+      }
+      deleteCookie(c, MFA_COOKIE, { path: MFA_PATH })
       setSessionCookie(c, login.token)
       const code = await c.var.authService.issueAuthorizationCode(
         login.userId,
@@ -597,7 +696,7 @@ const auth = new Hono<AppEnv>()
           401,
         )
       }
-      let login: { token: string; userId: string }
+      let login: LoginResult
       try {
         login = await c.var.authService.loginWithGoogle({
           providerAccountId: profile.id,
@@ -615,6 +714,7 @@ const auth = new Hono<AppEnv>()
         )
       }
       deleteCookie(c, GOOGLE_AUTHORIZE_COOKIE, { path: GOOGLE_PATH })
+      if (login.kind === 'mfa') return startMfa(c, pending, login.userId)
       setSessionCookie(c, login.token)
       const code = await c.var.authService.issueAuthorizationCode(
         login.userId,

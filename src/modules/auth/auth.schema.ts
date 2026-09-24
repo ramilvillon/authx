@@ -94,6 +94,13 @@ export const authorizeFormSchema = authorizeQuerySchema.extend({
   csrf_token: z.string().optional(),
 })
 
+export const totpFormSchema = authorizeQuerySchema.extend({
+  code: z.string().min(1).max(64),
+  // Optional for the same reason as on authorizeFormSchema: missing is a CSRF
+  // refusal (403), decided by the handler.
+  csrf_token: z.string().optional(),
+})
+
 export const clientCredentialsResponseSchema = z.object({
   access_token: z.string(),
   token_type: z.literal('Bearer'),

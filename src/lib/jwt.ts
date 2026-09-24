@@ -100,4 +100,51 @@ export async function verifyWithKeyRing(
   return await verify(token, publicKeyPem, 'RS256') as AccessClaims
 }
 
+// The half-finished login between "password (or Google) OK" and "code OK".
+// Its own audience keeps it from being accepted as anything else, and it
+// carries no client_id or scope, so requireAuth refuses it as an access token
+// too. All it grants is the right to TRY codes, which the per-account lockout
+// and the replay guard bound.
+export const MFA_CHALLENGE_AUD = 'authx:mfa-challenge'
+
+export async function signMfaChallenge(opts: {
+  sub: string
+  issuer: string
+  privateKeyPem: string
+  kid: string
+  ttlSeconds: number
+}): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const signingJwk = await privatePemToSigningJwk(opts.privateKeyPem, opts.kid)
+  return await sign(
+    {
+      iss: opts.issuer,
+      sub: opts.sub,
+      aud: MFA_CHALLENGE_AUD,
+      iat: now,
+      exp: now + opts.ttlSeconds,
+    },
+    signingJwk,
+    'RS256',
+  )
+}
+
+// The challenged user id, or null for anything that is not a live challenge.
+export async function verifyMfaChallenge(
+  token: string,
+  keySet: KeySet,
+): Promise<string | null> {
+  try {
+    const claims = await verifyWithKeyRing(token, keySet) as unknown as Record<
+      string,
+      unknown
+    >
+    return claims.aud === MFA_CHALLENGE_AUD && typeof claims.sub === 'string'
+      ? claims.sub
+      : null
+  } catch {
+    return null
+  }
+}
+
 export { decode }

@@ -8,6 +8,7 @@ Deno.test('loginWithGoogle new user: creates a passwordless user, links the acco
     email: 'g@b.com',
     emailVerified: true,
   })
+  assert(login.kind === 'session')
   const user = await userRepo.findByEmail('g@b.com')
   assertEquals(user?.passwordHash, null)
   // Google only reaches this branch with verified_email true (the check above
@@ -40,6 +41,7 @@ Deno.test('loginWithGoogle links a passwordless, verified account and signs it i
     email: 'invited@b.com',
     emailVerified: true,
   })
+  assert(login.kind === 'session')
   assertEquals(login.userId, invited.id)
   assert(await socialRepo.findByProviderAccount('google', 'g-222'))
 })

@@ -1,10 +1,14 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
+import { assert, assertEquals, assertStringIncludes } from '@std/assert'
 import {
   authHeader,
+  hiddenFields,
   makeTestApp,
   seedDefaultService,
+  submitLoginForm,
+  submitTotpForm,
   totpCode,
 } from '../helpers.ts'
+import { s256Challenge } from '../../src/lib/pkce.ts'
 
 const PASSWORD = 'pw123456'
 
@@ -79,4 +83,219 @@ Deno.test('password grant: a wrong password is still invalid_grant for a TOTP us
   await enroll(ctx)
   const res = await passwordGrant(ctx, 'wrong-password')
   assertEquals((await res.json()).error, 'invalid_grant')
+})
+
+const REDIRECT = 'https://app.example/cb'
+const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+
+// setup() seeds a service with no redirect URIs; the hosted flow needs one.
+async function hostedSetup(env: Record<string, string> = {}) {
+  const ctx = await setup(env)
+  const service = await ctx.orgRepo.findServiceByAudience(ctx.audience)
+  const clientId = `cid_${crypto.randomUUID()}`
+  await ctx.orgRepo.createService({
+    id: crypto.randomUUID(),
+    orgId: service!.orgId,
+    clientId,
+    clientSecretHash: null,
+    name: 'Web',
+    slug: 'web',
+    audience: `web-${crypto.randomUUID()}`,
+    type: 'public',
+    redirectUris: [REDIRECT],
+    createdAt: new Date(),
+  })
+  return { ...ctx, clientId }
+}
+
+async function loginFields(ctx: { clientId: string; email: string }) {
+  return {
+    client_id: ctx.clientId,
+    redirect_uri: REDIRECT,
+    state: 'st',
+    code_challenge: await s256Challenge(VERIFIER),
+    code_challenge_method: 'S256',
+    email: ctx.email,
+    password: PASSWORD,
+  }
+}
+
+const cookieNames = (res: Response) =>
+  res.headers.getSetCookie().map((c) => c.split('=')[0])
+
+Deno.test('hosted login: a TOTP user gets the code page, not a session', async () => {
+  const ctx = await hostedSetup()
+  await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  assertEquals(page.status, 200)
+  assert(
+    !cookieNames(page).includes('authx_session'),
+    'no session before the code',
+  )
+  assert(cookieNames(page).includes('authx_mfa'))
+  const mfa = page.headers.getSetCookie().find((c) =>
+    c.startsWith('authx_mfa=')
+  )!
+  assertStringIncludes(mfa, 'HttpOnly')
+  assertStringIncludes(mfa, 'Path=/oauth')
+  assertStringIncludes(await page.clone().text(), 'name="code"')
+})
+
+Deno.test('hosted login: the right code opens the session and redirects with a code', async () => {
+  const ctx = await hostedSetup()
+  const { secret } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const res = await submitTotpForm(ctx.app, page, await totpCode(secret, 1))
+  assertEquals(res.status, 302)
+  const location = new URL(res.headers.get('location')!)
+  assertEquals(location.origin + location.pathname, REDIRECT)
+  assertEquals(location.searchParams.get('state'), 'st')
+  assert(location.searchParams.get('code'))
+  assert(cookieNames(res).includes('authx_session'))
+  // The challenge is cleared once used.
+  const cleared = res.headers.getSetCookie().find((c) =>
+    c.startsWith('authx_mfa=')
+  )
+  assert(cleared && /Max-Age=0/i.test(cleared))
+})
+
+Deno.test('hosted login: a recovery code works in place of a TOTP code', async () => {
+  const ctx = await hostedSetup()
+  const { recovery_codes } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const res = await submitTotpForm(ctx.app, page, recovery_codes[0])
+  assertEquals(res.status, 302)
+})
+
+Deno.test('hosted login: a wrong code shows the code page again with 401', async () => {
+  const ctx = await hostedSetup()
+  await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const res = await submitTotpForm(ctx.app, page, 'AAAA-AAAA-AAAA-AAAA')
+  assertEquals(res.status, 401)
+  const html = await res.text()
+  assertStringIncludes(html, 'That code is not valid')
+  assertStringIncludes(html, 'name="code"')
+})
+
+Deno.test('hosted login: a code used to sign in cannot be used again', async () => {
+  const ctx = await hostedSetup()
+  const { secret } = await enroll(ctx)
+  const code = await totpCode(secret, 1)
+  const first = await submitTotpForm(
+    ctx.app,
+    await submitLoginForm(ctx.app, await loginFields(ctx)),
+    code,
+  )
+  assertEquals(first.status, 302)
+  const again = await submitTotpForm(
+    ctx.app,
+    await submitLoginForm(ctx.app, await loginFields(ctx)),
+    code,
+  )
+  assertEquals(again.status, 401)
+})
+
+Deno.test('hosted login: wrong codes count toward the account lockout', async () => {
+  const ctx = await hostedSetup({
+    LOGIN_MAX_FAILURES: '3',
+    LOGIN_LOCKOUT_MS: '60000',
+  })
+  const { recovery_codes } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const cookie = page.headers.getSetCookie().map((c) => c.split(';')[0]).join(
+    '; ',
+  )
+  const html = await page.text()
+  const post = (code: string) =>
+    ctx.app.request('/oauth/authorize/totp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+      body: new URLSearchParams({ ...hiddenFields(html), code }).toString(),
+      redirect: 'manual',
+    })
+  for (let i = 0; i < 3; i++) {
+    assertEquals((await post('AAAA-AAAA-AAAA-AAAA')).status, 401)
+  }
+  // Locked: even a valid recovery code is refused now.
+  assertEquals((await post(recovery_codes[0])).status, 401)
+})
+
+Deno.test('hosted login: no challenge cookie means sign in again', async () => {
+  const ctx = await hostedSetup()
+  const { secret } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const csrfOnly = page.headers.getSetCookie()
+    .filter((c) => c.startsWith('authx_csrf='))
+    .map((c) => c.split(';')[0]).join('; ')
+  const res = await submitTotpForm(
+    ctx.app,
+    page,
+    await totpCode(secret, 1),
+    csrfOnly,
+  )
+  assertEquals(res.status, 401)
+  assertStringIncludes(await res.text(), 'Your sign-in timed out')
+})
+
+Deno.test('hosted login: an access token in the challenge cookie is refused', async () => {
+  const ctx = await hostedSetup()
+  const { Authorization } = await authHeader(
+    ctx.app,
+    ctx.email,
+    PASSWORD,
+    ctx.audience,
+  )
+  const { secret } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const forged = page.headers.getSetCookie()
+    .map((c) => c.split(';')[0])
+    .map((c) =>
+      c.startsWith('authx_mfa=') ? `authx_mfa=${Authorization.slice(7)}` : c
+    )
+    .join('; ')
+  const res = await submitTotpForm(
+    ctx.app,
+    page,
+    await totpCode(secret, 1),
+    forged,
+  )
+  assertEquals(res.status, 401)
+})
+
+Deno.test('the MFA challenge is not an access token', async () => {
+  const ctx = await hostedSetup()
+  await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const jwt = page.headers.getSetCookie()
+    .find((c) => c.startsWith('authx_mfa='))!.split(';')[0].slice(
+      'authx_mfa='.length,
+    )
+  const res = await ctx.app.request('/users/me', {
+    headers: { Authorization: `Bearer ${jwt}` },
+  })
+  assertEquals(res.status, 401)
+})
+
+Deno.test('hosted login: a CSRF mismatch on the code page is refused', async () => {
+  const ctx = await hostedSetup()
+  const { secret } = await enroll(ctx)
+  const page = await submitLoginForm(ctx.app, await loginFields(ctx))
+  const noCsrf = page.headers.getSetCookie()
+    .filter((c) => c.startsWith('authx_mfa='))
+    .map((c) => c.split(';')[0]).join('; ')
+  const res = await submitTotpForm(
+    ctx.app,
+    page,
+    await totpCode(secret, 1),
+    noCsrf,
+  )
+  assertEquals(res.status, 403)
+})
+
+Deno.test('hosted login: a user without TOTP is unaffected', async () => {
+  const ctx = await hostedSetup()
+  const res = await submitLoginForm(ctx.app, await loginFields(ctx))
+  assertEquals(res.status, 302)
+  assert(cookieNames(res).includes('authx_session'))
 })

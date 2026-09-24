@@ -27,6 +27,10 @@ import { exchangeGoogleAuthCode } from '../../lib/google.ts'
 
 export type AuthService = ReturnType<typeof createAuthService>
 
+export type LoginResult =
+  | { kind: 'session'; token: string; userId: string }
+  | { kind: 'mfa'; userId: string }
+
 export function createAuthService(deps: {
   userRepo: UserRepository
   tokenRepo: RefreshTokenRepository
@@ -217,6 +221,14 @@ export function createAuthService(deps: {
     return { token, userId }
   }
 
+  // Where a proven first factor becomes a session -- unless the account has
+  // TOTP on, in which case the caller must collect a code first. Every hosted
+  // login path (password, Google) ends here, so one check covers them all.
+  async function finishLogin(userId: string): Promise<LoginResult> {
+    if (await deps.totp.isEnabled(userId)) return { kind: 'mfa', userId }
+    return { kind: 'session', ...(await createSession(userId)) }
+  }
+
   return {
     async passwordGrant(
       identifier: string,
@@ -336,7 +348,7 @@ export function createAuthService(deps: {
       providerAccountId: string
       email: string
       emailVerified: boolean
-    }): Promise<{ token: string; userId: string }> {
+    }): Promise<LoginResult> {
       const existing = await deps.socialRepo.findByProviderAccount(
         'google',
         profile.providerAccountId,
@@ -346,7 +358,7 @@ export function createAuthService(deps: {
         if (!(await subjectExists(existing.userId))) {
           throw AppError.of('invalid_grant')
         }
-        return createSession(existing.userId)
+        return finishLogin(existing.userId)
       }
 
       // Never create-or-link an account from an unverified provider email:
@@ -385,7 +397,7 @@ export function createAuthService(deps: {
           provider: 'google',
           providerAccountId: profile.providerAccountId,
         })
-        return createSession(created.id)
+        return finishLogin(created.id)
       }
 
       if (user.passwordHash !== null || !user.emailVerified) {
@@ -404,7 +416,7 @@ export function createAuthService(deps: {
         provider: 'google',
         providerAccountId: profile.providerAccountId,
       })
-      return createSession(user.id)
+      return finishLogin(user.id)
     },
     async validateAuthorizeRequest(p: {
       clientId: string
@@ -468,13 +480,32 @@ export function createAuthService(deps: {
     async loginCreateSession(
       email: string,
       password: string,
-    ): Promise<{ token: string; userId: string }> {
+    ): Promise<LoginResult> {
       const user = await authenticatePassword(
         await userRepo.findByEmail(email),
         password,
       )
       requireVerifiedEmail(user)
-      return createSession(user.id)
+      return finishLogin(user.id)
+    },
+    // The second step of a hosted login. The first factor was proven when
+    // the challenge was issued; this proves the second and opens the session.
+    // Same per-account lockout as passwords, and the same error whether the
+    // account is locked or the code is wrong.
+    async completeMfaLogin(
+      userId: string,
+      code: string,
+    ): Promise<{ token: string; userId: string }> {
+      if (!(await subjectExists(userId))) throw AppError.of('invalid_grant')
+      if (loginAttempts.isLocked(userId)) {
+        throw AppError.of('invalid_credentials')
+      }
+      if (!(await deps.totp.verify(userId, code))) {
+        loginAttempts.recordFailure(userId)
+        throw AppError.of('invalid_credentials')
+      }
+      loginAttempts.clear(userId)
+      return createSession(userId)
     },
     async exchangeAuthorizationCode(input: {
       code: string

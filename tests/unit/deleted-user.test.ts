@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assert, assertEquals, assertRejects } from '@std/assert'
 import { makeTestDeps, seedDefaultService } from '../helpers.ts'
 
 // userService.remove now purges these rows outright (see users-service.test.ts).
@@ -21,6 +21,7 @@ Deno.test('an orphaned row cannot refresh, resume a session, or log in via Googl
     audience,
   )
   const session = await authService.loginCreateSession('gone@b.com', 'pw123456')
+  assert(session.kind === 'session')
   await ctx.socialRepo.link({
     id: crypto.randomUUID(),
     userId: user.id,

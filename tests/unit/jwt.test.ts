@@ -3,10 +3,13 @@ import { sign } from 'hono/jwt'
 import {
   decode,
   signAccessToken,
+  signMfaChallenge,
   verifyAccessToken,
+  verifyMfaChallenge,
   verifyWithKeyRing,
 } from '../../src/lib/jwt.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
+import { keySet } from '../helpers.ts'
 
 Deno.test('sign + verify access token (RS256)', async () => {
   const { privateKeyPem, publicKeyPem } = await generateRsaKeyPairPem()
@@ -133,4 +136,38 @@ Deno.test('verifyWithKeyRing falls back to the active key for a kid-less token',
   assertEquals(header.kid, undefined)
   const claims = await verifyWithKeyRing(legacy, ring)
   assertEquals(claims.sub, 'legacy')
+})
+
+const challenge = (ttlSeconds = 300) =>
+  signMfaChallenge({
+    sub: 'u-1',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds,
+  })
+
+Deno.test('an MFA challenge verifies to its subject', async () => {
+  assertEquals(await verifyMfaChallenge(await challenge(), keySet), 'u-1')
+})
+
+Deno.test('an expired or garbage challenge verifies to null', async () => {
+  assertEquals(await verifyMfaChallenge(await challenge(-10), keySet), null)
+  assertEquals(await verifyMfaChallenge('not-a-jwt', keySet), null)
+})
+
+Deno.test('an access token is not an MFA challenge', async () => {
+  const access = await signAccessToken({
+    sub: 'u-1',
+    issuer: 'http://test.local',
+    privateKeyPem: keySet.privateKeyPem,
+    kid: keySet.kid,
+    ttlSeconds: 900,
+    aud: 'some-service',
+    org: 'o',
+    scope: '',
+    clientId: 'c',
+    subType: 'user',
+  })
+  assertEquals(await verifyMfaChallenge(access, keySet), null)
 })
