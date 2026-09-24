@@ -135,10 +135,8 @@ Deno.test('timingSafeEqual', () => {
 Deno.test('otpauthUri carries the parameters every authenticator app reads', () => {
   const uri = new URL(otpauthUri('auth.example.com', 'a@b.com', 'JBSWY3DP'))
   assertEquals(uri.protocol, 'otpauth:')
-  assertEquals(
-    decodeURIComponent(uri.pathname),
-    '//totp/auth.example.com:a@b.com',
-  )
+  assertEquals(uri.host, 'totp')
+  assertEquals(decodeURIComponent(uri.pathname), '/auth.example.com:a@b.com')
   assertEquals(uri.searchParams.get('secret'), 'JBSWY3DP')
   assertEquals(uri.searchParams.get('issuer'), 'auth.example.com')
   assertEquals(uri.searchParams.get('algorithm'), 'SHA1')

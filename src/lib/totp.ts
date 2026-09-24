@@ -144,5 +144,5 @@ export function otpauthUri(
     digits: '6',
     period: '30',
   })
-  return `otpauth:////totp/${label}?${q}`
+  return `otpauth://totp/${label}?${q}`
 }
