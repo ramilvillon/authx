@@ -919,6 +919,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@simplewebauthn/server@^13.3.0",
       "jsr:@std/assert@^1.0.8",
       "jsr:@std/encoding@^1.0.5",
       "npm:@hono/oauth-providers@0.9",
