@@ -85,7 +85,12 @@ export function renderLogin(
   status: 200 | 400 | 401 | 403 | 404 | 409 = 200,
 ) {
   return c.html(
-    loginPage({ ...q, csrf_token: csrfToken(c) }, error, googleHref(c, q)),
+    loginPage(
+      { ...q, csrf_token: csrfToken(c) },
+      error,
+      googleHref(c, q),
+      c.var.passkeyService.enabled,
+    ),
     status,
   )
 }

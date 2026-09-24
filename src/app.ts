@@ -15,6 +15,7 @@ import { makeRateLimiter } from './middleware/rate-limit.ts'
 import users from './modules/users/users.routes.ts'
 import totp from './modules/mfa/totp.routes.ts'
 import auth from './modules/auth/auth.routes.ts'
+import passkeys from './modules/passkeys/passkey.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
 import admin from './modules/admin/admin.routes.ts'
 import userinfo from './modules/oidc/userinfo.routes.ts'
@@ -59,6 +60,14 @@ export function createApp(deps: Deps) {
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
     .use(
+      '/oauth/authorize/passkey',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
+    .use(
+      '/oauth/authorize/passkey/options',
+      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+    )
+    .use(
       '/verify-email/resend',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
@@ -76,6 +85,7 @@ export function createApp(deps: Deps) {
     .route('/users', totp)
     .route('/users', users)
     .route('/oauth', auth)
+    .route('/oauth', passkeys)
     .route('/oauth', userinfo)
     .route('/.well-known', wellknown)
     .route('/', admin)

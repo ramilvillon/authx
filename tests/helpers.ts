@@ -213,6 +213,7 @@ export function makeTestApp(envOverrides: Record<string, string> = {}) {
     passkeyRepo,
     totpService: deps.totpService,
     passkeyService: deps.passkeyService,
+    userService: deps.userService,
     sentEmails,
   }
 }

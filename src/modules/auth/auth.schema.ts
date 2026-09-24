@@ -112,5 +112,16 @@ export type ClientCredentialsResponse = z.infer<
   typeof clientCredentialsResponseSchema
 >
 
+// The passkey sign-in POST: the authorize request plus the assertion the
+// browser produced, as JSON. Capped: a real assertion is a few KB.
+export const passkeyFormSchema = authorizeQuerySchema.extend({
+  credential: z.string().min(1).max(20_000),
+  // Optional for the same reason as on authorizeFormSchema.
+  csrf_token: z.string().optional(),
+})
+
+// The fetch() endpoints the hosted pages' scripts call.
+export const csrfOnlySchema = z.object({ csrf_token: z.string().optional() })
+
 export type TokenRequest = z.infer<typeof tokenRequestSchema>
 export type TokenPair = z.infer<typeof tokenPairSchema>

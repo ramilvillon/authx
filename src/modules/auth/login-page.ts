@@ -1,3 +1,5 @@
+import { passkeySignInScript } from '../passkeys/passkey-script.ts'
+
 // ponytail: plain server-rendered HTML string — no template engine, no JSX dep.
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (ch) => (
@@ -41,6 +43,7 @@ export function loginPage(
   // Present only when Google login is configured: the same authorize request,
   // sent to /oauth/google instead of posted with a password.
   googleHref?: string,
+  passkeys = false,
 ): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Sign in</title></head>
@@ -49,13 +52,26 @@ export function loginPage(
   ${error ? `<p role="alert">${esc(error)}</p>` : ''}
   <form method="post" action="/oauth/authorize">
     ${authorizeHiddenFields(params)}
-    <label>Email <input type="email" name="email" required></label>
+    <label>Email <input type="email" name="email" required${
+    passkeys ? ' autocomplete="username webauthn"' : ''
+  }></label>
     <label>Password <input type="password" name="password" required></label>
     <button type="submit">Sign in</button>
   </form>
   ${
     googleHref
       ? `<p><a href="${esc(googleHref)}">Sign in with Google</a></p>`
+      : ''
+  }
+  ${
+    passkeys
+      ? `<form id="passkey-form" method="post" action="/oauth/authorize/passkey">
+    ${authorizeHiddenFields(params)}
+    <input type="hidden" name="credential">
+    <button type="button" id="passkey-button">Sign in with a passkey</button>
+    <p id="passkey-error" role="alert" hidden>That passkey couldn't be used. Try again, or sign in with your password.</p>
+  </form>
+  ${passkeySignInScript}`
       : ''
   }
 </body></html>`
