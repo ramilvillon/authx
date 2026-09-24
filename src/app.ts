@@ -13,6 +13,7 @@ import { createLogger } from './lib/logger.ts'
 import { AppError } from './lib/errors.ts'
 import { makeRateLimiter } from './middleware/rate-limit.ts'
 import users from './modules/users/users.routes.ts'
+import totp from './modules/mfa/totp.routes.ts'
 import auth from './modules/auth/auth.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
 import admin from './modules/admin/admin.routes.ts'
@@ -66,6 +67,7 @@ export function createApp(deps: Deps) {
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
     .get('/health', (c) => c.json({ status: 'ok' }))
+    .route('/users', totp)
     .route('/users', users)
     .route('/oauth', auth)
     .route('/oauth', userinfo)
