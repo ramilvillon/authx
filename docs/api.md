@@ -163,16 +163,21 @@ that already exist** — those keep working until they expire; only a hosted log
 started afterwards is asked for a code.
 
 All four routes require a Bearer token (`requireAuth`); a `client_credentials`
-(service) token names no user and gets 404, as on `/users/me`. Every route also
-answers 404 `totp_not_configured` when `TOTP_ENCRYPTION_KEY` is unset —
-two-factor authentication is simply not offered.
+(service) token names no user and gets 404, as on `/users/me`. The three
+`/users/me/totp*` routes also answer 404 `totp_not_configured` when
+`TOTP_ENCRYPTION_KEY` is unset — two-factor setup is simply not offered. The
+operator reset `DELETE /users/:id/totp` works with or without the key: it is the
+way back in for users who enrolled before the key was removed.
 
 | endpoint                      | body                                             | success                                                                               | errors                                                                                                                                                                    |
 | ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /users/me/totp`         | —                                                | 200 `{ secret, otpauth_uri }`; creates or overwrites a pending (unconfirmed) setup    | 404 `totp_not_configured` · 409 `totp_already_enabled`                                                                                                                    |
 | `POST /users/me/totp/confirm` | `{ code }`                                       | 200 `{ recovery_codes: string[10] }`, shown once and never again; turns two-factor on | 400 `totp_invalid_code` · 404 `totp_not_pending` (or `totp_not_configured`) · 409 `totp_already_enabled`                                                                  |
 | `DELETE /users/me/totp`       | exactly one of `{ code }` or `{ recovery_code }` | 204; deletes the secret and every recovery code                                       | 400 neither or both sent · 401 `invalid_credentials` (wrong proof), throttled — 429 after 5 wrong proofs per account in the rate-limit window · 404 `totp_not_configured` |
-| `DELETE /users/:id/totp`      | —                                                | 204; operator reset (idempotent)                                                      | 403 missing `users:update:any` on a platform-audience token · 404 `totp_not_configured`                                                                                   |
+| `DELETE /users/:id/totp`      | —                                                | 204; operator reset (idempotent)                                                      | 403 missing `users:update:any` on a platform-audience token                                                                                                               |
+
+A code is accepted once: right after confirming, wait for the next code before
+signing in — the code used to confirm cannot also sign in.
 
 `otpauth_uri` is
 `otpauth://totp/<issuer host>:<email or username>?secret=…&issuer=<issuer host>&algorithm=SHA1&digits=6&period=30`

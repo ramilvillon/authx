@@ -20,6 +20,14 @@ const throttleFailedTotpProofs = createMiddleware<AppEnv>((c, next) =>
   })(c, next)
 )
 
+// The setup and confirm bodies carry secrets (the TOTP seed, the recovery
+// codes): keep them out of every cache, as the token endpoint does.
+const noStore = createMiddleware<AppEnv>(async (c, next) => {
+  c.header('Cache-Control', 'no-store')
+  c.header('Pragma', 'no-cache')
+  await next()
+})
+
 const codeSchema = z.object({ code: z.string().min(1).max(64) })
 const disableSchema = z.object({
   code: z.string().min(1).max(64).optional(),
@@ -53,6 +61,7 @@ const totp = new Hono<AppEnv>()
         409: { description: 'Two-factor authentication is already enabled' },
       },
     }),
+    noStore,
     requireAuth,
     async (c) => c.json(await c.var.totpService.startSetup(c.var.user.id), 200),
   )
@@ -72,6 +81,7 @@ const totp = new Hono<AppEnv>()
         409: { description: 'Two-factor authentication is already enabled' },
       },
     }),
+    noStore,
     requireAuth,
     validator('json', codeSchema),
     async (c) =>
@@ -137,7 +147,6 @@ const totp = new Hono<AppEnv>()
         204: { description: 'Reset (idempotent)' },
         401: { description: 'Missing or invalid access token' },
         403: { description: 'Missing users:update:any on a platform token' },
-        404: { description: 'Two-factor authentication is not configured' },
       },
     }),
     requireAuth,

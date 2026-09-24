@@ -39,6 +39,11 @@ async function enroll(ctx: Awaited<ReturnType<typeof setup>>) {
     code: await totpCode(secret),
   })
   assertEquals(confirm.status, 200)
+  // Both bodies carry secrets (the seed, the recovery codes): never cached.
+  for (const res of [start, confirm]) {
+    assertEquals(res.headers.get('cache-control'), 'no-store')
+    assertEquals(res.headers.get('pragma'), 'no-cache')
+  }
   const { recovery_codes } = await confirm.json()
   return { secret, recovery_codes: recovery_codes as string[] }
 }
@@ -109,8 +114,19 @@ Deno.test('wrong disable proofs are throttled per user', async () => {
   assertEquals(statuses[5], 429)
 })
 
-Deno.test('every route is 404 when TOTP_ENCRYPTION_KEY is unset', async () => {
+Deno.test('self-service routes are 404 when TOTP_ENCRYPTION_KEY is unset; operator reset still works', async () => {
   const ctx = await setup({ TOTP_ENCRYPTION_KEY: '' })
+  const admin = await seedPlatformAdmin(ctx.userRepo, [
+    ...PLATFORM_PERMISSIONS,
+    'users:update:any',
+  ])
+  assertEquals(
+    (await ctx.app.request(`/users/${ctx.user.id}/totp`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${admin}` },
+    })).status,
+    204,
+  )
   assertEquals((await ctx.call('POST', '/users/me/totp')).status, 404)
   assertEquals(
     (await ctx.call('POST', '/users/me/totp/confirm', { code: '123456' }))

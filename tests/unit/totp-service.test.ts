@@ -180,9 +180,22 @@ Deno.test('with no key every management call is totp_not_configured', async () =
       ctx.totp.startSetup(ctx.user.id),
       ctx.totp.confirm(ctx.user.id, '123456'),
       ctx.totp.disable(ctx.user.id, '123456'),
-      ctx.totp.reset(ctx.user.id),
     ]
   ) assertEquals(await code(p), 'totp_not_configured')
+})
+
+// The documented recovery path once the key is removed: reset only deletes
+// rows, so it must not need the key.
+Deno.test('reset works with no key configured', async () => {
+  const ctx = await enrolled()
+  const noKey = createTotpService({
+    totpRepo: ctx.totpRepo,
+    userRepo: ctx.userRepo,
+    issuer: 'test.local',
+    encryptionKey: '',
+  })
+  await noKey.reset(ctx.user.id)
+  assertEquals(await ctx.totpRepo.find(ctx.user.id), null)
 })
 
 Deno.test('startSetup for an unknown user id is user_not_found', async () => {

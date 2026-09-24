@@ -154,8 +154,10 @@ export function createTotpService(deps: {
 
     // Operator path (lost device AND lost codes). No proof by design: the
     // route requires users:update:any, which can already reset the password.
+    // No key needed either: it only deletes rows, and it is the recovery path
+    // when TOTP_ENCRYPTION_KEY has been removed (login still asks enrolled
+    // users for a code, since isEnabled ignores the key).
     async reset(userId: string): Promise<void> {
-      await requireKey()
       await totpRepo.deleteAllForUser(userId)
     },
   }

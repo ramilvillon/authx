@@ -68,15 +68,19 @@ const schema = z.object({
     .transform((v) => v === 'true'),
   // AES-256 key sealing TOTP secrets at rest (a TOTP secret cannot be hashed:
   // the server needs it to compute codes). Empty = two-factor setup is not
-  // offered and its endpoints answer 404. Generate: openssl rand -base64 32
-  TOTP_ENCRYPTION_KEY: z.string().default('').refine((v) => {
-    if (v === '') return true
-    try {
-      return decodeBase64(v).length === 32
-    } catch {
-      return false
-    }
-  }),
+  // offered (enrolled users are still asked for a code). Generate: openssl
+  // rand -base64 32
+  TOTP_ENCRYPTION_KEY: z.string().default('').refine(
+    (v) => {
+      if (v === '') return true
+      try {
+        return decodeBase64(v).length === 32
+      } catch {
+        return false
+      }
+    },
+    'TOTP_ENCRYPTION_KEY must be base64 of exactly 32 bytes (openssl rand -base64 32)',
+  ),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
