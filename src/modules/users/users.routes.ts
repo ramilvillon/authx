@@ -41,7 +41,12 @@ const json = (schema: ReturnType<typeof resolver>) => ({
 // updates and malformed bodies never spend it.
 // ponytail: built per request because the store only exists on the context;
 // the limiter is cheap to construct and all its state lives in the store.
-const throttleFailedPasswordProofs = createMiddleware<AppEnv>((c, next) =>
+// Shared with POST /users/me/totp: one budget per account for every
+// current_password proof, so each endpoint does not add its own guesses.
+export const throttleFailedPasswordProofs = createMiddleware<AppEnv>((
+  c,
+  next,
+) =>
   makeRateLimiter(c.var.rateStore, {
     windowMs: c.var.config.rateLimit.windowMs,
     limit: 5,

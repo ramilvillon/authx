@@ -1,3 +1,4 @@
+import { hashPassword } from '../../src/lib/password.ts'
 import { assert, assertEquals, assertStringIncludes } from '@std/assert'
 import { makeTestApp, submitTotpForm, totpCode } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
@@ -361,10 +362,15 @@ Deno.test('GET /oauth/google refuses a callback whose state does not match the c
 Deno.test('a Google sign-in of a TOTP user asks for the code before any session', async () => {
   const ctx = makeTestApp(GOOGLE_ENV)
   const user = await seed(ctx)
-  // Enroll directly: this user is passwordless, so there is no password
-  // grant to mint the API token with.
-  const { secret } = await ctx.totpService.startSetup(user.id)
+  // Enroll directly, with a password set just for the purpose: enrolment
+  // needs one, and this Google user has none.
+  await ctx.userRepo.update(user.id, {
+    passwordHash: await hashPassword('pw123456'),
+  })
+  const { secret } = await ctx.totpService.startSetup(user.id, 'pw123456')
   await ctx.totpService.confirm(user.id, await totpCode(secret))
+  // Back to passwordless, or the Google path refuses the account outright.
+  await ctx.userRepo.update(user.id, { passwordHash: null })
   const { cookie, state } = await start(ctx.app)
 
   const google = stubGoogle(PROFILE)

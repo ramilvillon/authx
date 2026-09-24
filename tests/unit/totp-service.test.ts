@@ -3,6 +3,9 @@ import { makeTestDeps, TEST_TOTP_KEY, totpCode } from '../helpers.ts'
 import { AppError } from '../../src/lib/errors.ts'
 import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
 import { createTotpService } from '../../src/modules/mfa/totp.service.ts'
+import { hashPassword } from '../../src/lib/password.ts'
+
+const PW = 'pw123456'
 
 async function setup(env: Record<string, string> = {}) {
   const ctx = makeTestDeps(env)
@@ -10,7 +13,7 @@ async function setup(env: Record<string, string> = {}) {
   const user = await ctx.userRepo.create({
     id: crypto.randomUUID(),
     email: `t-${crypto.randomUUID()}@b.com`,
-    passwordHash: null,
+    passwordHash: await hashPassword(PW),
     createdAt: now,
     updatedAt: now,
   })
@@ -19,7 +22,7 @@ async function setup(env: Record<string, string> = {}) {
 
 async function enrolled() {
   const ctx = await setup()
-  const { secret } = await ctx.totp.startSetup(ctx.user.id)
+  const { secret } = await ctx.totp.startSetup(ctx.user.id, PW)
   const { recovery_codes } = await ctx.totp.confirm(
     ctx.user.id,
     await totpCode(secret),
@@ -32,7 +35,7 @@ const code = (p: Promise<unknown>) =>
 
 Deno.test('startSetup returns a base32 secret and a matching otpauth URI', async () => {
   const ctx = await setup()
-  const { secret, otpauth_uri } = await ctx.totp.startSetup(ctx.user.id)
+  const { secret, otpauth_uri } = await ctx.totp.startSetup(ctx.user.id, PW)
   assertMatch(secret, /^[A-Z2-7]{32}$/)
   const uri = new URL(otpauth_uri)
   assertEquals(uri.searchParams.get('secret'), secret)
@@ -43,7 +46,7 @@ Deno.test('startSetup returns a base32 secret and a matching otpauth URI', async
 
 Deno.test('the secret is stored sealed, never in the clear', async () => {
   const ctx = await setup()
-  const { secret } = await ctx.totp.startSetup(ctx.user.id)
+  const { secret } = await ctx.totp.startSetup(ctx.user.id, PW)
   const row = await ctx.totpRepo.find(ctx.user.id)
   assertMatch(row!.secret, /^v1:/)
   assert(!row!.secret.includes(secret))
@@ -51,8 +54,8 @@ Deno.test('the secret is stored sealed, never in the clear', async () => {
 
 Deno.test('startSetup again replaces a pending setup', async () => {
   const ctx = await setup()
-  const first = await ctx.totp.startSetup(ctx.user.id)
-  const second = await ctx.totp.startSetup(ctx.user.id)
+  const first = await ctx.totp.startSetup(ctx.user.id, PW)
+  const second = await ctx.totp.startSetup(ctx.user.id, PW)
   assert(first.secret !== second.secret)
   assertEquals(
     await code(ctx.totp.confirm(ctx.user.id, await totpCode(first.secret))),
@@ -72,7 +75,7 @@ Deno.test('startSetup while enabled is 409 and leaves the enabled secret alone',
   const ctx = await enrolled()
   const before = await ctx.totpRepo.find(ctx.user.id)
   assertEquals(
-    await code(ctx.totp.startSetup(ctx.user.id)),
+    await code(ctx.totp.startSetup(ctx.user.id, PW)),
     'totp_already_enabled',
   )
   assertEquals(await ctx.totpRepo.find(ctx.user.id), before)
@@ -93,7 +96,7 @@ Deno.test('startSetup propagates a non-duplicate createPending failure as-is', a
     encryptionKey: TEST_TOTP_KEY,
   })
   await assertRejects(
-    () => totp.startSetup(ctx.user.id),
+    () => totp.startSetup(ctx.user.id, PW),
     Error,
     'db down',
   )
@@ -114,7 +117,7 @@ Deno.test('confirm with no setup is totp_not_pending; confirm twice is 409', asy
 
 Deno.test('confirm with a wrong code is totp_invalid_code and stays pending', async () => {
   const ctx = await setup()
-  const { secret } = await ctx.totp.startSetup(ctx.user.id)
+  const { secret } = await ctx.totp.startSetup(ctx.user.id, PW)
   const right = await totpCode(secret)
   const wrong = right === '000000' ? '111111' : '000000'
   assertEquals(
@@ -147,7 +150,7 @@ Deno.test('verify accepts each recovery code once, however it is typed', async (
 Deno.test('verify is false for a user without TOTP, and for a pending setup', async () => {
   const ctx = await setup()
   assertEquals(await ctx.totp.verify(ctx.user.id, '123456'), false)
-  const { secret } = await ctx.totp.startSetup(ctx.user.id)
+  const { secret } = await ctx.totp.startSetup(ctx.user.id, PW)
   assertEquals(
     await ctx.totp.verify(ctx.user.id, await totpCode(secret)),
     false,
@@ -177,7 +180,7 @@ Deno.test('with no key every management call is totp_not_configured', async () =
   const ctx = await setup({ TOTP_ENCRYPTION_KEY: '' })
   for (
     const p of [
-      ctx.totp.startSetup(ctx.user.id),
+      ctx.totp.startSetup(ctx.user.id, PW),
       ctx.totp.confirm(ctx.user.id, '123456'),
       ctx.totp.disable(ctx.user.id, '123456'),
     ]
@@ -205,7 +208,23 @@ Deno.test('startSetup for an unknown user id is user_not_found', async () => {
   // constructor type and that overload does not typecheck -- same reasoning
   // as guest-accounts.test.ts. Reuse this file's own `code` helper instead.
   assertEquals(
-    await code(ctx.totp.startSetup('no-such-user')),
+    await code(ctx.totp.startSetup('no-such-user', PW)),
     'user_not_found',
   )
+})
+
+Deno.test('startSetup needs the password, and refuses an account without one', async () => {
+  const ctx = await setup()
+  assertEquals(
+    await code(ctx.totp.startSetup(ctx.user.id, 'wrong-pw')),
+    'invalid_credentials',
+  )
+  // Google-only: nothing to prove against, so a stolen token and the owner
+  // look the same. Refused, as a password change is.
+  await ctx.userRepo.update(ctx.user.id, { passwordHash: null })
+  assertEquals(
+    await code(ctx.totp.startSetup(ctx.user.id, PW)),
+    'invalid_credentials',
+  )
+  assertEquals(await ctx.totpRepo.find(ctx.user.id), null)
 })

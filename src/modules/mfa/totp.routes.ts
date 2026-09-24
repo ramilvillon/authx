@@ -7,6 +7,7 @@ import type { AppEnv } from '../../deps.ts'
 import { requireAuth } from '../../middleware/auth.ts'
 import { requirePermission } from '../../middleware/authorize.ts'
 import { makeRateLimiter } from '../../middleware/rate-limit.ts'
+import { throttleFailedPasswordProofs } from '../users/users.routes.ts'
 
 // Same shape and reasoning as throttleFailedPasswordProofs in users.routes.ts:
 // registered after requireAuth so the key is the user id, counting only 401s.
@@ -29,6 +30,7 @@ const noStore = createMiddleware<AppEnv>(async (c, next) => {
 })
 
 const codeSchema = z.object({ code: z.string().min(1).max(64) })
+const setupSchema = z.object({ current_password: z.string().min(1) })
 const disableSchema = z.object({
   code: z.string().min(1).max(64).optional(),
   recovery_code: z.string().min(1).max(64).optional(),
@@ -52,18 +54,38 @@ const totp = new Hono<AppEnv>()
       description:
         'Returns a new secret and its otpauth:// URI (render it as ' +
         'a QR code). Nothing is enforced until POST /users/me/totp/confirm. ' +
-        'Calling this again replaces a setup that was never confirmed.',
+        'Calling this again replaces a setup that was never confirmed. ' +
+        'Needs the current password: an access token alone is not enough, ' +
+        'since any app the user is signed into holds one. Accounts with no ' +
+        'password (Google-only) cannot enrol.',
       security: [{ bearerAuth: [] }],
       responses: {
         200: { description: '{ secret, otpauth_uri }' },
-        401: { description: 'Missing or invalid access token' },
+        400: { description: 'Missing current_password' },
+        401: {
+          description:
+            'Missing or invalid access token, or a wrong current_password',
+        },
+        403: {
+          description: 'Guest accounts cannot use two-factor authentication',
+        },
         404: { description: NOT_CONFIGURED },
         409: { description: 'Two-factor authentication is already enabled' },
+        429: { description: 'Too many failed current_password proofs' },
       },
     }),
     noStore,
     requireAuth,
-    async (c) => c.json(await c.var.totpService.startSetup(c.var.user.id), 200),
+    throttleFailedPasswordProofs,
+    validator('json', setupSchema),
+    async (c) =>
+      c.json(
+        await c.var.totpService.startSetup(
+          c.var.user.id,
+          c.req.valid('json').current_password,
+        ),
+        200,
+      ),
   )
   .post(
     '/me/totp/confirm',

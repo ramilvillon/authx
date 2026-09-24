@@ -375,3 +375,24 @@ Deno.test('a guest cannot start an account deletion, but can once it has bound',
   assertEquals(ctx.sentEmails.at(-1)?.to, 'del@example.test')
   assertEquals(ctx.sentEmails.at(-1)?.purpose, 'account_deletion')
 })
+
+Deno.test('a guest cannot turn on TOTP: it would lock them out of the password grant', async () => {
+  const ctx = makeTestApp()
+  const { audience } = await seedGuestRow(ctx, 'guest_totp', 'pw-secret')
+  const pair = await (await grant(ctx.app, {
+    grant_type: 'password',
+    username: 'guest_totp',
+    password: 'pw-secret',
+    audience,
+  })).json()
+  const res = await ctx.app.request('/users/me/totp', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${pair.access_token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ current_password: 'pw-secret' }),
+  })
+  assertEquals(res.status, 403)
+  assertEquals((await res.json()).error.code, 'totp_guest_forbidden')
+})

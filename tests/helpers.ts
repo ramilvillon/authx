@@ -141,6 +141,7 @@ export function makeTestDeps(
       verificationRepo,
       socialRepo,
       orgRepo,
+      totpRepo,
       allowPasswordGrant: config.allowPasswordGrant,
     }),
     authService: createAuthService({

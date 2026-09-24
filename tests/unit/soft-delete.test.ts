@@ -150,3 +150,26 @@ Deno.test('Google login does not create a second row for a soft-deleted address'
   )
   assertEquals(await ctx.userRepo.findByEmail('returning@b.com'), null)
 })
+
+Deno.test('purging an account erases its TOTP secret and recovery codes', async () => {
+  const ctx = makeTestDeps()
+  const now = new Date()
+  const user = await ctx.userRepo.create({
+    id: crypto.randomUUID(),
+    email: 'purge-totp@b.com',
+    passwordHash: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await ctx.totpRepo.createPending(user.id, 'v1:a:b')
+  await ctx.totpRepo.replaceRecoveryCodes(user.id, ['h1'])
+  await ctx.deps.userService.remove(user.id)
+  // Still there during the grace period: an undelete keeps its 2FA.
+  assert(await ctx.totpRepo.find(user.id))
+  assertEquals(
+    await ctx.deps.userService.purgeDeletedBefore(new Date(Date.now() + 1000)),
+    1,
+  )
+  assertEquals(await ctx.totpRepo.find(user.id), null)
+  assertEquals(await ctx.totpRepo.consumeRecoveryCode(user.id, 'h1'), false)
+})
