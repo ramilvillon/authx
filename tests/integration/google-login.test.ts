@@ -493,3 +493,12 @@ Deno.test('prompt=login shows the login page even with a live SSO session', asyn
   assertEquals(forced.status, 200)
   assertStringIncludes(await forced.text(), '<form')
 })
+
+Deno.test('the Google link keeps prompt', async () => {
+  const ctx = makeTestApp(GOOGLE_ENV)
+  await seed(ctx)
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery({ prompt: 'login' })}`,
+  )
+  assertStringIncludes(await page.text(), 'prompt=login')
+})

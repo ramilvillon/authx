@@ -15,14 +15,23 @@ import {
   tokenRequestSchema,
   totpFormSchema,
 } from './auth.schema.ts'
-import { loginPage } from './login-page.ts'
 import { totpPage } from './totp-page.ts'
 import type { LoginResult } from './auth.service.ts'
 import { signMfaChallenge, verifyMfaChallenge } from '../../lib/jwt.ts'
 import { AppError, type ErrorCode } from '../../lib/errors.ts'
-import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { Context } from 'hono'
 import type { z } from 'zod'
+import {
+  type AuthorizeQuery,
+  csrfRefused,
+  csrfToken,
+  finishHostedLogin,
+  GOOGLE_PATH,
+  redirectTo,
+  renderLogin,
+  secureCookies,
+  SESSION_COOKIE,
+} from './hosted.ts'
 
 // Allow-list, not a fall-through arm: the last ternary used to catch everything
 // that was not one of the first three, so a grant type added to the schema would
@@ -186,8 +195,6 @@ const json = (schema: ReturnType<typeof resolver>) => ({
   'application/json': { schema },
 })
 
-const SESSION_COOKIE = 'authx_session'
-const CSRF_COOKIE = 'authx_csrf'
 // The signed half-finished login between the first factor and the code.
 // Scoped to /oauth: only /oauth/authorize/totp reads it.
 const MFA_COOKIE = 'authx_mfa'
@@ -199,74 +206,6 @@ const MFA_CODE_ERROR = 'That code is not valid. Check your authenticator ' +
 // and `state`, and `state` belongs to googleAuth, so the request rides in a
 // cookie of our own, scoped to the one route that reads it.
 const GOOGLE_AUTHORIZE_COOKIE = 'authx_google_authorize'
-const GOOGLE_PATH = '/oauth/google'
-
-type AuthorizeQuery = z.infer<typeof authorizeQuerySchema>
-
-// Double-submit: the same random value in a cookie and in a hidden form field.
-// An attacker's page can forge the field but cannot read or write a cookie on
-// this origin, so it cannot make the two agree — which is what stops a
-// drive-by POST from logging a victim into the attacker's account.
-//
-// Reuse an existing cookie instead of minting per render. Re-minting was what
-// broke the previous attempt: every render would invalidate the field the last
-// one handed out, killing two open tabs, the back button, and the
-// wrong-password retry (which re-renders this very page).
-function csrfToken(c: Context<AppEnv>): string {
-  const token = getCookie(c, CSRF_COOKIE) ?? generateRefreshToken()
-  setCookie(c, CSRF_COOKIE, token, {
-    httpOnly: true,
-    // secure only over https (the issuer's scheme); lets local http dev work.
-    secure: c.var.config.issuer.startsWith('https'),
-    sameSite: 'Lax',
-    path: '/',
-    maxAge: 3600,
-  })
-  return token
-}
-
-const secureCookies = (c: Context<AppEnv>) =>
-  c.var.config.issuer.startsWith('https')
-
-function setSessionCookie(c: Context<AppEnv>, token: string) {
-  // secure only over https (the issuer's scheme); lets local http dev work.
-  setCookie(c, SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: secureCookies(c),
-    sameSite: 'Lax',
-    path: '/',
-    maxAge: c.var.config.ssoSessionTtl,
-  })
-}
-
-// Only the authorize parameters: `q` may be a submitted form that also holds
-// the email and password, and none of that belongs in a link.
-function googleHref(c: Context<AppEnv>, q: AuthorizeQuery): string | undefined {
-  if (!c.var.config.google.clientId) return undefined
-  const { client_id, redirect_uri, scope, state, nonce } = q
-  const params = new URLSearchParams({
-    client_id,
-    redirect_uri,
-    scope,
-    code_challenge: q.code_challenge,
-    code_challenge_method: q.code_challenge_method,
-  })
-  if (state) params.set('state', state)
-  if (nonce) params.set('nonce', nonce)
-  return `${GOOGLE_PATH}?${params}`
-}
-
-function renderLogin(
-  c: Context<AppEnv>,
-  q: AuthorizeQuery,
-  error?: string,
-  status: 200 | 400 | 401 | 403 | 404 | 409 = 200,
-) {
-  return c.html(
-    loginPage({ ...q, csrf_token: csrfToken(c) }, error, googleHref(c, q)),
-    status,
-  )
-}
 
 function renderTotp(
   c: Context<AppEnv>,
@@ -315,17 +254,6 @@ const GOOGLE_LOGIN_MESSAGES: Partial<Record<string, string>> = {
     "Your Google account's email address is not verified.",
   account_exists_link_password:
     'An account with this email already exists. Sign in with your password.',
-}
-
-function redirectTo(
-  base: string,
-  params: Record<string, string | undefined>,
-): string {
-  const u = new URL(base)
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined) u.searchParams.set(k, v)
-  }
-  return u.toString()
 }
 
 function grant(c: Context<AppEnv>, body: z.infer<typeof tokenRequestSchema>) {
@@ -484,24 +412,8 @@ const auth = new Hono<AppEnv>()
     validator('form', authorizeFormSchema),
     async (c) => {
       const f = c.req.valid('form')
-      const presented = getCookie(c, CSRF_COOKIE)
-      if (!presented || f.csrf_token !== presented) {
-        // A human gets the form back and simply retries. A script gets the
-        // machine-readable code instead: handing it a login page makes a
-        // protocol mistake look like bad credentials, and it would retry a
-        // login that can never succeed.
-        if (!c.req.header('accept')?.includes('text/html')) {
-          throw AppError.of('csrf_token_invalid')
-        }
-        // Re-render rather than dead-end: csrfToken reuses the cookie, so a
-        // legitimate caller whose cookie was missing gets a working form back.
-        return renderLogin(
-          c,
-          f,
-          'This sign-in form is no longer valid. Please try again.',
-          403,
-        )
-      }
+      const refused = csrfRefused(c, f, f.csrf_token)
+      if (refused) return refused
       const service = await c.var.authService.validateAuthorizeRequest({
         clientId: f.client_id,
         redirectUri: f.redirect_uri,
@@ -526,20 +438,7 @@ const auth = new Hono<AppEnv>()
         return renderLogin(c, f, 'Invalid email or password', 401)
       }
       if (login.kind === 'mfa') return startMfa(c, f, login.userId)
-      setSessionCookie(c, login.token)
-      const code = await c.var.authService.issueAuthorizationCode(
-        login.userId,
-        service,
-        {
-          redirectUri: f.redirect_uri,
-          scope: f.scope,
-          codeChallenge: f.code_challenge,
-          codeChallengeMethod: f.code_challenge_method,
-          nonce: f.nonce,
-          authTime: new Date(),
-        },
-      )
-      return c.redirect(redirectTo(f.redirect_uri, { code, state: f.state }))
+      return finishHostedLogin(c, f, service, login)
     },
   )
   .post(
@@ -547,19 +446,8 @@ const auth = new Hono<AppEnv>()
     validator('form', totpFormSchema),
     async (c) => {
       const f = c.req.valid('form')
-      const presented = getCookie(c, CSRF_COOKIE)
-      if (!presented || f.csrf_token !== presented) {
-        // Same handling as POST /authorize.
-        if (!c.req.header('accept')?.includes('text/html')) {
-          throw AppError.of('csrf_token_invalid')
-        }
-        return renderLogin(
-          c,
-          f,
-          'This sign-in form is no longer valid. Please try again.',
-          403,
-        )
-      }
+      const refused = csrfRefused(c, f, f.csrf_token)
+      if (refused) return refused
       // Re-checked rather than trusted: the fields came back from the browser.
       const service = await c.var.authService.validateAuthorizeRequest({
         clientId: f.client_id,
@@ -584,20 +472,7 @@ const auth = new Hono<AppEnv>()
         return renderTotp(c, f, MFA_CODE_ERROR, 401)
       }
       deleteCookie(c, MFA_COOKIE, { path: MFA_PATH })
-      setSessionCookie(c, login.token)
-      const code = await c.var.authService.issueAuthorizationCode(
-        login.userId,
-        service,
-        {
-          redirectUri: f.redirect_uri,
-          scope: f.scope,
-          codeChallenge: f.code_challenge,
-          codeChallengeMethod: f.code_challenge_method,
-          nonce: f.nonce,
-          authTime: new Date(),
-        },
-      )
-      return c.redirect(redirectTo(f.redirect_uri, { code, state: f.state }))
+      return finishHostedLogin(c, f, service, login)
     },
   )
   .post('/logout', async (c) => {
@@ -718,22 +593,7 @@ const auth = new Hono<AppEnv>()
       }
       deleteCookie(c, GOOGLE_AUTHORIZE_COOKIE, { path: GOOGLE_PATH })
       if (login.kind === 'mfa') return startMfa(c, pending, login.userId)
-      setSessionCookie(c, login.token)
-      const code = await c.var.authService.issueAuthorizationCode(
-        login.userId,
-        service,
-        {
-          redirectUri: pending.redirect_uri,
-          scope: pending.scope,
-          codeChallenge: pending.code_challenge,
-          codeChallengeMethod: pending.code_challenge_method,
-          nonce: pending.nonce,
-          authTime: new Date(),
-        },
-      )
-      return c.redirect(
-        redirectTo(pending.redirect_uri, { code, state: pending.state }),
-      )
+      return finishHostedLogin(c, pending, service, login)
     },
   )
 
