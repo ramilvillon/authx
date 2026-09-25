@@ -206,3 +206,85 @@ Deno.test('a reset token is refused at the confirm endpoint', async () => {
   // ...and it must still work at its own endpoint afterwards.
   assertEquals((await submitReset(app, token, NEW_PASSWORD)).status, 204)
 })
+
+// Someone who had the mailbox (or a stolen token) could mint these links, keep
+// them, and use them after the owner recovers. Recovery exists to lock that
+// person out, so every account-changing link minted before it must die with it.
+Deno.test('a reset kills every other outstanding reset, email-change and deletion link', async () => {
+  const { app, orgRepo, sentEmails } = makeTestApp()
+  const id = await registerAndId(app, 'dana6@b.com')
+  const audience = await seedDefaultService(orgRepo, id)
+  const { Authorization } = await authHeader(
+    app,
+    'dana6@b.com',
+    PASSWORD,
+    audience,
+  )
+
+  await requestReset(app, 'dana6@b.com')
+  const staleReset = tokenFrom(sentEmails.at(-1)!.link)
+  await app.request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'attacker@evil.test' }),
+  })
+  const staleEmailChange = tokenFrom(sentEmails.at(-1)!.link)
+  await app.request(`/users/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization },
+  })
+  const staleDeletion = tokenFrom(sentEmails.at(-1)!.link)
+  assertEquals(sentEmails.at(-1)?.purpose, 'account_deletion')
+
+  // The owner recovers with a fresh link.
+  await requestReset(app, 'dana6@b.com')
+  assertEquals(
+    (await submitReset(app, tokenFrom(sentEmails.at(-1)!.link), NEW_PASSWORD))
+      .status,
+    204,
+  )
+
+  assertEquals(
+    (await submitReset(app, staleReset, 'attacker-pw-1')).status,
+    400,
+  )
+  assertEquals(
+    (await app.request(`/confirm?token=${staleEmailChange}`)).status,
+    400,
+  )
+  assertEquals(
+    (await app.request(`/confirm?token=${staleDeletion}`)).status,
+    400,
+  )
+  assertEquals(await canLogIn(app, 'dana6@b.com', NEW_PASSWORD, audience), true)
+})
+
+Deno.test('a password change kills an outstanding reset link', async () => {
+  const { app, orgRepo, sentEmails } = makeTestApp()
+  const id = await registerAndId(app, 'dana7@b.com')
+  const audience = await seedDefaultService(orgRepo, id)
+  const { Authorization } = await authHeader(
+    app,
+    'dana7@b.com',
+    PASSWORD,
+    audience,
+  )
+  await requestReset(app, 'dana7@b.com')
+  const staleReset = tokenFrom(sentEmails.at(-1)!.link)
+
+  const res = await app.request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      password: NEW_PASSWORD,
+      current_password: PASSWORD,
+    }),
+  })
+  assertEquals(res.status, 200)
+
+  assertEquals(
+    (await submitReset(app, staleReset, 'attacker-pw-1')).status,
+    400,
+  )
+  assertEquals(await canLogIn(app, 'dana7@b.com', NEW_PASSWORD, audience), true)
+})

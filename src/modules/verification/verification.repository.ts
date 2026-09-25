@@ -8,6 +8,16 @@ export type TokenPurpose =
   | 'account_deletion'
   | 'password_reset'
 
+// Links that take over or remove the account. A password reset or change
+// invalidates every outstanding one: a link minted before the recovery (by an
+// attacker who had the mailbox or a token) must not outlive it. verify_email
+// is left alone -- it only proves control of the address.
+export const ACCOUNT_CHANGING_PURPOSES: TokenPurpose[] = [
+  'password_reset',
+  'email_change',
+  'account_deletion',
+]
+
 export type VerificationTokenRecord = {
   id: string
   userId: string
@@ -26,6 +36,9 @@ export type VerificationTokenRepository = {
   findByHash(tokenHash: string): Promise<VerificationTokenRecord | null>
   // Atomic single-use; false = already consumed.
   consume(id: string): Promise<boolean>
+  // Marks every unconsumed token of these purposes as consumed, rather than
+  // deleting it, so a later click still reads as a used link. Returns the count.
+  consumeAllForUser(userId: string, purposes: TokenPurpose[]): Promise<number>
   // No foreign keys in the schema: a deleted user's rows survive unless
   // something removes them. Returns the number of rows removed.
   deleteAllForUser(userId: string): Promise<number>
@@ -67,6 +80,18 @@ export function createInMemoryVerificationTokenRepository(): VerificationTokenRe
       if (!t || t.consumedAt) return Promise.resolve(false)
       byId.set(id, { ...t, consumedAt: new Date() })
       return Promise.resolve(true)
+    },
+    consumeAllForUser(userId, purposes) {
+      let n = 0
+      for (const [k, v] of byId) {
+        if (
+          v.userId === userId && !v.consumedAt && purposes.includes(v.purpose)
+        ) {
+          byId.set(k, { ...v, consumedAt: new Date() })
+          n++
+        }
+      }
+      return Promise.resolve(n)
     },
     deleteAllForUser(userId) {
       let n = 0

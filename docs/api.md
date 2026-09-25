@@ -137,6 +137,13 @@ emoji costs four.
 A reset link is not consumed by a refused password: the rules are checked first,
 so the user can submit a better one with the same link.
 
+Any password change — a reset, a self-service change, or an operator setting one
+with `PATCH /users/:id` — revokes every refresh token and session, deletes every
+passkey, and invalidates every outstanding password-reset, email-change and
+account-deletion link on the account. A link minted before the change (by
+someone who had the mailbox or a stolen token) cannot be used after it.
+Email-verification links are left alone.
+
 Generated secrets — a guest account's password — skip these rules; they are
 random, and a blocklist hit on one would be a false positive.
 

@@ -5,9 +5,10 @@ import type { SessionRepository } from '../auth/session.repository.ts'
 import type { PasskeyRepository } from '../passkeys/passkey.repository.ts'
 import { hashPassword } from '../../lib/password.ts'
 import type { EmailSender } from '../../lib/email.ts'
-import type {
-  TokenPurpose,
-  VerificationTokenRepository,
+import {
+  ACCOUNT_CHANGING_PURPOSES,
+  type TokenPurpose,
+  type VerificationTokenRepository,
 } from './verification.repository.ts'
 import { generateRefreshToken, hashToken } from '../../lib/tokens.ts'
 import { assertAcceptablePassword } from '../../lib/password-policy.ts'
@@ -222,6 +223,10 @@ export function createVerificationService(deps: {
       await tokenRepo.revokeAllForUser(user.id)
       await sessionRepo.revokeAllForUser(user.id)
       await passkeyRepo.deleteAllPasskeysForUser(user.id)
+      await verificationRepo.consumeAllForUser(
+        user.id,
+        ACCOUNT_CHANGING_PURPOSES,
+      )
     },
     async verifyEmail(token: string): Promise<void> {
       const record = await verificationRepo.findByHash(await hashToken(token))
