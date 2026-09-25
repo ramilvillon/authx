@@ -17,6 +17,8 @@
 | `POST`   | `/users/me/totp/confirm`            | Bearer                             | Confirm setup with a first code; turns two-factor on, returns 10 recovery codes (shown once)                                                 |
 | `DELETE` | `/users/me/totp`                    | Bearer                             | Turn two-factor off; needs `code` or `recovery_code` as proof, throttled                                                                     |
 | `DELETE` | `/users/:id/totp`                   | Bearer + `users:update:any`        | Reset a user's two-factor authentication (operator; lost device and codes)                                                                   |
+| `GET`    | `/users/me/passkeys`                | Bearer                             | List your passkeys                                                                                                                           |
+| `DELETE` | `/users/me/passkeys/:id`            | Bearer                             | Delete one of your passkeys                                                                                                                  |
 | `GET`    | `/verify-email`                     | —                                  | Verify via emailed token                                                                                                                     |
 | `POST`   | `/verify-email/resend`              | —                                  | Resend verification email (always 204)                                                                                                       |
 | `POST`   | `/oauth/token`                      | —                                  | OAuth2 password, refresh, code, or client_credentials grant                                                                                  |
@@ -25,6 +27,11 @@
 | `GET`    | `/oauth/authorize`                  | —                                  | Start SSO; login form or 302 with `?code`                                                                                                    |
 | `POST`   | `/oauth/authorize`                  | —                                  | Submit login; sets session, 302 with `?code` (or the code page, for a two-factor account)                                                    |
 | `POST`   | `/oauth/authorize/totp`             | `authx_mfa` challenge cookie       | Submit a TOTP or recovery code to finish a two-factor sign-in; sets session, 302 with `?code`                                                |
+| `POST`   | `/oauth/authorize/passkey/options`  | —                                  | Create a sign-in challenge for the hosted login page's passkey button/autofill                                                               |
+| `POST`   | `/oauth/authorize/passkey`          | —                                  | Submit a passkey assertion to sign in; sets session, 302 with `?code`; skips the TOTP prompt                                                 |
+| `GET`    | `/oauth/passkeys/dismiss`           | —                                  | "Not now" on the post-sign-in passkey offer; sets a 30-day dismiss cookie, then continues the authorize request                              |
+| `POST`   | `/oauth/passkeys/register/options`  | SSO session cookie                 | Create an enrolment challenge for the passkey offer page                                                                                     |
+| `POST`   | `/oauth/passkeys/register`          | SSO session cookie                 | Submit a passkey creation response; adds the passkey to the signed-in user                                                                   |
 | `POST`   | `/oauth/logout`                     | session cookie                     | Revoke the SSO session                                                                                                                       |
 | `GET`    | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
 | `POST`   | `/oauth/userinfo`                   | Bearer (user access token)         | OIDC UserInfo — identity claims for the token subject                                                                                        |
@@ -234,6 +241,98 @@ client that sees `mfa_required` should send the user through the authorization
 code flow (`GET /oauth/authorize`) instead, where the code page is available.
 The refresh grant is unaffected: a refresh token proves a login that already
 happened.
+
+## Passkeys (WebAuthn)
+
+A passkey is bound to authx's own domain (the relying-party ID), so both
+creating and using one has to run in a browser page authx serves — this is not
+an API-only feature the way TOTP is. Passkeys are off unless `WEBAUTHN_RP_ID` is
+set (see [Configuration](configuration.md#passkeys-webauthn)); with it empty,
+the login page shows no passkey UI and every route below answers 404
+`passkey_not_configured`.
+
+### Sign-in — the hosted login page
+
+When passkeys are on, `GET /oauth/authorize`'s login page adds a **"Sign in with
+a passkey"** button, hidden until an inline script confirms the browser supports
+WebAuthn, and the email field gets `autocomplete="username webauthn"` so
+supporting browsers also offer saved passkeys from the field's own autofill
+dropdown (conditional UI). Both paths call
+`POST /oauth/authorize/passkey/options` for a challenge, run
+`navigator.credentials.get()`, then `POST /oauth/authorize/passkey` with the
+assertion plus the pending authorize request. **A passkey sign-in counts as its
+own factor and skips the TOTP prompt**; every other sign-in gate still applies
+(account exists and is not soft-deleted, `REQUIRE_EMAIL_VERIFICATION`). On
+success: session cookie, 302 to `redirect_uri?code=…`, exactly like a password
+sign-in. Any failure — unknown credential, bad signature, an
+expired/already-used challenge — is the single `passkey_invalid` (401); the page
+re-renders with "That passkey couldn't be used." A script request (no
+`text/html` in `Accept`) gets the JSON error instead.
+
+`POST /oauth/authorize/passkey/options` has its own rate budget (30 per IP per
+window, separate from the login limiter) since a passkey-aware page can call it
+on every load for conditional UI, before anyone has typed anything;
+`POST /oauth/authorize/passkey` shares the strict login limiter with the
+password and TOTP routes.
+
+### Enrolment — the offer page
+
+Right after a **password, TOTP, or Google** sign-in (not after a passkey
+sign-in) `finishHostedLogin` shows an offer page — "Sign in faster next time
+with a passkey" — instead of redirecting straight away, unless the browser
+already carries an `authx_passkey_offer=dismissed` cookie. **Not now**
+(`GET /oauth/passkeys/dismiss`) sets that cookie for 30 days and continues.
+**Create passkey** calls `POST /oauth/passkeys/register/options`, runs
+`navigator.credentials.create()`, then `POST /oauth/passkeys/register`; either
+way the browser is sent on to `GET /oauth/authorize` with the same params
+(`prompt` removed), which reuses the session that was just created and issues
+the code — enrolling never issues a code by itself.
+
+An app that wants an explicit **"Add passkey"** entry point (rather than waiting
+for the next sign-in) sends the user through the ordinary authorize URL with
+`prompt=login` added: this forces the sign-in page even with an active SSO
+session, and — unlike a dismissed offer on every other sign-in — `prompt=login`
+always shows the offer afterwards regardless of the dismiss cookie.
+
+The two register routes require the SSO session cookie plus CSRF, and the
+session's sign-in must be **under 5 minutes old** (403 `fresh_login_required`
+otherwise — the same step-up window as TOTP enrolment). Refused at 20 passkeys
+per account (409 `passkey_limit_reached`); a duplicate credential is 409
+`passkey_already_registered`.
+
+### Management
+
+| endpoint                        | success                                                     | errors                     |
+| ------------------------------- | ----------------------------------------------------------- | -------------------------- |
+| `GET /users/me/passkeys`        | 200 `[{ id, created_at, last_used_at, backed_up, aaguid }]` | 404 not configured         |
+| `DELETE /users/me/passkeys/:id` | 204                                                         | 404 not theirs / not found |
+
+Bearer token; a `client_credentials` (service) token names no user and gets 404,
+like `/users/me`. The public key is never returned. `aaguid` identifies the
+authenticator model (iCloud Keychain, Google Password Manager, a hardware key…)
+from the public community AAGUID list — authx ships no name map, so mapping it
+to a display name is left to the caller. Delete needs only the bearer token: a
+stolen token can remove a passkey, but that only removes a convenience — the
+password or Google sign-in it was created after still works.
+
+### Errors
+
+- `passkey_not_configured` — 404, `WEBAUTHN_RP_ID` is unset
+- `passkey_invalid` — 401, covers every sign-in verification failure
+- `passkey_limit_reached` — 409, 20 passkeys already on the account
+- `passkey_already_registered` — 409, duplicate credential
+- `passkey_not_found` — 404, delete of a passkey that isn't yours or doesn't
+  exist
+- `fresh_login_required` — 403, the session's sign-in is more than 5 minutes old
+
+### Native apps
+
+authx has no native WebAuthn integration (no associated-domains setup). A native
+app gets passkeys the same way it gets any other hosted sign-in: run
+`GET /oauth/authorize` inside `ASWebAuthenticationSession` (iOS) or a Custom Tab
+(Android) rather than an embedded webview — both support passkeys backed by the
+OS credential manager, and the redirect back to the app carries the code exactly
+as it does for a password or Google sign-in.
 
 ## Management API
 

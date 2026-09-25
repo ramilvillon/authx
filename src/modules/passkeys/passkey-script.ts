@@ -76,8 +76,9 @@ export function passkeyRegisterScript(continueHref: string): string {
 ${b64u}
   const form = document.getElementById('passkey-register');
   const note = document.getElementById('passkey-error');
-  // Escaped so a redirect target ending in "</script>" (or containing one)
-  // cannot close this tag and inject markup.
+  // Escaped so a redirect target ending in a script-closing tag (or
+  // containing one) cannot close this element early and inject markup.
+  // (Spelling it out literally here would do exactly that to this comment.)
   const next = ${JSON.stringify(continueHref).replace(/</g, '\\u003c')};
   if (!window.PublicKeyCredential) { form.hidden = true; return; }
   const post = (path, fields) => fetch(path, {

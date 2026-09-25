@@ -3,47 +3,48 @@
 Copy `.env.example` to `.env` and adjust. Config is validated at startup
 (`src/config.ts`); missing required values fail fast.
 
-| Variable                   | Default                              | Notes                                                                                                                    |
-| -------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                     | `3000`                               | HTTP port                                                                                                                |
-| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                                                       |
-| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                                               |
-| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                                              |
-| `DB_USER`                  | —                                    | **required**; MySQL user                                                                                                 |
-| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                                           |
-| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                                                        |
-| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                                              |
-| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                                                 |
-| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                                              |
-| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                                                |
-| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                                                       |
-| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                                                        |
-| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                                          |
-| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                                         |
-| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                                           |
-| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                                                    |
-| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                                               |
-| `SMTP_HOST`                | _(empty)_                            | the switch: set it to send over SMTP, leave empty for the log sender. `.env.example` sets `127.0.0.1` (Mailpit)          |
-| `SMTP_PORT`                | `587`                                | `587` upgrades with STARTTLS, `465` needs `SMTP_SECURE=true`. `.env.example` sets `1025` (Mailpit)                       |
-| `SMTP_USER`                | _(empty)_                            | SMTP username; empty sends without auth (Mailpit needs none)                                                             |
-| `SMTP_PASS`                | _(empty)_                            | SMTP password                                                                                                            |
-| `SMTP_SECURE`              | `false`                              | `true` for implicit TLS on connect (port 465)                                                                            |
-| `EMAIL_FROM`               | _(empty)_                            | sender address, e.g. `"authx <no-reply@example.com>"`                                                                    |
-| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                                                       |
-| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window                          |
-| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                                                 |
-| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                                                   |
-| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                               |
-| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                                     |
-| `GOOGLE_BIND_REDIRECT_URI` | _(empty)_                            | `redirect_uri` for the server-auth-code exchange; empty sends none (native SDK). See [guest accounts](guest-accounts.md) |
-| `ALLOW_PASSWORD_GRANT`     | `true`                               | `false` refuses `grant_type=password` (RFC 9700 forbids it); logs a warning at startup while on. Guests need it on       |
-| `TOTP_ENCRYPTION_KEY`      | _(empty)_                            | seals TOTP secrets at rest (AES-256-GCM); `''` = no new setups; enrolled users are still asked for a code                |
-| `LOGIN_MAX_FAILURES`       | `10`                                 | consecutive failed passwords before an account stops accepting them                                                      |
-| `LOGIN_LOCKOUT_MS`         | `900000` (15m)                       | how long that account refuses passwords; password reset stays available throughout                                       |
-| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                                    |
-| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                                       |
-| `GUEST_RATE_LIMIT`         | `10`                                 | per-IP max `POST /users/guest` creations per `RATE_LIMIT_WINDOW_MS`                                                      |
-| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                                              |
+| Variable                   | Default                              | Notes                                                                                                                                                |
+| -------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                     | `3000`                               | HTTP port                                                                                                                                            |
+| `LOG_LEVEL`                | `debug`                              | `debug` enables pino-pretty output                                                                                                                   |
+| `DB_HOST`                  | `localhost`                          | MySQL host                                                                                                                                           |
+| `DB_PORT`                  | `3306`                               | MySQL port (keep in sync with `MYSQL_PORT`)                                                                                                          |
+| `DB_USER`                  | —                                    | **required**; MySQL user                                                                                                                             |
+| `DB_PASS`                  | _(empty)_                            | MySQL password                                                                                                                                       |
+| `DB_NAME`                  | —                                    | **required**; MySQL database name                                                                                                                    |
+| `JWT_PRIVATE_KEY`          | —                                    | **required**; RS256 private key (PEM). `deno task keys:gen`                                                                                          |
+| `JWT_PUBLIC_KEY`           | —                                    | **required**; RS256 public key (PEM), published via JWKS                                                                                             |
+| `JWT_ISSUER`               | —                                    | **required**; `iss` claim + OIDC issuer URL                                                                                                          |
+| `JWT_PREVIOUS_PUBLIC_KEYS` | `[]`                                 | retired signing public keys still honored during rotation                                                                                            |
+| `BOOTSTRAP_ADMIN_EMAIL`    | _(unset)_                            | optional; if set with password, `db:seed` creates a platform admin                                                                                   |
+| `BOOTSTRAP_ADMIN_PASSWORD` | _(unset)_                            | optional; bootstrap admin password; `change-me-please` is refused                                                                                    |
+| `ACCESS_TOKEN_TTL`         | `900`                                | access-token lifetime (seconds)                                                                                                                      |
+| `REFRESH_TOKEN_TTL`        | `2592000`                            | refresh-token lifetime (seconds)                                                                                                                     |
+| `SSO_SESSION_TTL`          | `2592000`                            | SSO session lifetime (seconds)                                                                                                                       |
+| `AUTH_CODE_TTL`            | `60`                                 | authorization-code lifetime (seconds)                                                                                                                |
+| `EMAIL_VERIFICATION_TTL`   | `86400`                              | email-verification link lifetime (seconds)                                                                                                           |
+| `SMTP_HOST`                | _(empty)_                            | the switch: set it to send over SMTP, leave empty for the log sender. `.env.example` sets `127.0.0.1` (Mailpit)                                      |
+| `SMTP_PORT`                | `587`                                | `587` upgrades with STARTTLS, `465` needs `SMTP_SECURE=true`. `.env.example` sets `1025` (Mailpit)                                                   |
+| `SMTP_USER`                | _(empty)_                            | SMTP username; empty sends without auth (Mailpit needs none)                                                                                         |
+| `SMTP_PASS`                | _(empty)_                            | SMTP password                                                                                                                                        |
+| `SMTP_SECURE`              | `false`                              | `true` for implicit TLS on connect (port 465)                                                                                                        |
+| `EMAIL_FROM`               | _(empty)_                            | sender address, e.g. `"authx <no-reply@example.com>"`                                                                                                |
+| `EMAIL_LOG_LINKS`          | `false`                              | set `true` only in local dev; logs the verification link + address                                                                                   |
+| `PRUNE_RETENTION`          | `2592000` (30d)                      | how long expired rows are kept before `db:prune` removes them; also the replay-detection window                                                      |
+| `ACCOUNT_PURGE_GRACE`      | `2592000` (30d)                      | how long a deleted account stays recoverable before `db:prune` erases it                                                                             |
+| `GOOGLE_CLIENT_ID`         | —                                    | Google OAuth client ID                                                                                                                               |
+| `GOOGLE_CLIENT_SECRET`     | —                                    | Google OAuth client secret                                                                                                                           |
+| `GOOGLE_REDIRECT_URI`      | `http://localhost:3000/oauth/google` | must equal the `/oauth/google` route                                                                                                                 |
+| `GOOGLE_BIND_REDIRECT_URI` | _(empty)_                            | `redirect_uri` for the server-auth-code exchange; empty sends none (native SDK). See [guest accounts](guest-accounts.md)                             |
+| `ALLOW_PASSWORD_GRANT`     | `true`                               | `false` refuses `grant_type=password` (RFC 9700 forbids it); logs a warning at startup while on. Guests need it on                                   |
+| `TOTP_ENCRYPTION_KEY`      | _(empty)_                            | seals TOTP secrets at rest (AES-256-GCM); `''` = no new setups; enrolled users are still asked for a code                                            |
+| `WEBAUTHN_RP_ID`           | _(empty)_                            | passkeys (WebAuthn) relying-party ID; `''` = passkeys off. Must equal the `JWT_ISSUER` host or a parent domain of it, or the server refuses to start |
+| `LOGIN_MAX_FAILURES`       | `10`                                 | consecutive failed passwords before an account stops accepting them                                                                                  |
+| `LOGIN_LOCKOUT_MS`         | `900000` (15m)                       | how long that account refuses passwords; password reset stays available throughout                                                                   |
+| `RATE_LIMIT_WINDOW_MS`     | `60000`                              | global limiter window                                                                                                                                |
+| `RATE_LIMIT_MAX`           | `100`                                | global limiter max requests/window                                                                                                                   |
+| `GUEST_RATE_LIMIT`         | `10`                                 | per-IP max `POST /users/guest` creations per `RATE_LIMIT_WINDOW_MS`                                                                                  |
+| `TRUST_PROXY`              | `0`                                  | number of trusted proxy hops; `0` ignores `X-Forwarded-For`                                                                                          |
 
 `TRUST_PROXY` must be the **exact** number of reverse proxies in front of this
 service (`2` behind Cloudflare -> nginx, `0` when directly exposed). Proxies
@@ -73,6 +74,26 @@ work, since those are hashed, not sealed. An operator can get a locked-out user
 back in with `DELETE /users/:id/totp` (see [API reference](api.md)), which
 resets two-factor authentication so they can sign in with their password alone
 and set it up again.
+
+## Passkeys (WebAuthn)
+
+`WEBAUTHN_RP_ID` is the relying-party ID: the domain a passkey is bound to.
+Leave it empty (the default) and passkeys are off — the hosted login page shows
+no passkey button or autofill, the offer page never appears, and every passkey
+route (sign-in, enrolment, list, delete) answers 404 `passkey_not_configured`.
+
+Set it to the `JWT_ISSUER` host itself, or a parent domain of it (e.g.
+`ISSUER=https://auth.example.com` allows `auth.example.com` or `example.com`);
+config loading throws on startup otherwise. The expected origin for every
+ceremony is the issuer's origin, and there is no separate `rpName` setting — the
+RP ID is used for both. WebAuthn requires https, with the usual exception for
+`localhost`.
+
+**Pick the final domain before turning this on: changing `WEBAUTHN_RP_ID` later
+orphans every passkey already created under the old value** — a passkey is
+cryptographically bound to the RP ID it was registered with, and there is no
+migration for it. Users fall back to their password (or Google) and can enrol a
+new passkey once the domain is fixed.
 
 ## Google OAuth
 
