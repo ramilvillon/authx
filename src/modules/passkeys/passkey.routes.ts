@@ -2,10 +2,12 @@ import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { getCookie, setCookie } from 'hono/cookie'
 import { validator } from 'hono-openapi/zod'
+import { describeRoute } from 'hono-openapi'
 import { z } from 'zod'
 import type { Context } from 'hono'
 import type { AppEnv } from '../../deps.ts'
 import { AppError } from '../../lib/errors.ts'
+import { requireAuth } from '../../middleware/auth.ts'
 import {
   authorizeQuerySchema,
   csrfOnlySchema,
@@ -152,6 +154,53 @@ const passkeys = new Hono<AppEnv>()
         session.userId,
         parseCredential(f.credential),
       )
+      return c.body(null, 204)
+    },
+  )
+
+const NOT_CONFIGURED = 'Passkeys are not configured, or the token names no ' +
+  'user (a service token)'
+
+// Mounted at /users, before the users routes (as the TOTP ones are). Only
+// list and delete: creating a passkey has to happen on authx's own page.
+export const passkeyManagement = new Hono<AppEnv>()
+  .get(
+    '/me/passkeys',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'List your passkeys',
+      description: 'aaguid names the password manager or security key model; ' +
+        'map it to a display name with the public AAGUID list.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        200: {
+          description: '[{ id, created_at, last_used_at, backed_up, aaguid }]',
+        },
+        401: { description: 'Missing or invalid access token' },
+        404: { description: NOT_CONFIGURED },
+      },
+    }),
+    requireAuth,
+    async (c) => c.json(await c.var.passkeyService.list(c.var.user.id), 200),
+  )
+  .delete(
+    '/me/passkeys/:id',
+    describeRoute({
+      tags: ['Users'],
+      summary: 'Delete one of your passkeys',
+      description: 'A bearer token is enough: deleting a passkey removes a ' +
+        'convenience, not access -- the password or Google sign-in it was ' +
+        'created after still works.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        204: { description: 'Deleted' },
+        401: { description: 'Missing or invalid access token' },
+        404: { description: `No such passkey of yours. Or: ${NOT_CONFIGURED}` },
+      },
+    }),
+    requireAuth,
+    async (c) => {
+      await c.var.passkeyService.remove(c.var.user.id, c.req.param('id'))
       return c.body(null, 204)
     },
   )

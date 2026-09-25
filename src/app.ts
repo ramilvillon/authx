@@ -15,7 +15,9 @@ import { makeRateLimiter } from './middleware/rate-limit.ts'
 import users from './modules/users/users.routes.ts'
 import totp from './modules/mfa/totp.routes.ts'
 import auth from './modules/auth/auth.routes.ts'
-import passkeys from './modules/passkeys/passkey.routes.ts'
+import passkeys, {
+  passkeyManagement,
+} from './modules/passkeys/passkey.routes.ts'
 import wellknown from './modules/wellknown/wellknown.routes.ts'
 import admin from './modules/admin/admin.routes.ts'
 import userinfo from './modules/oidc/userinfo.routes.ts'
@@ -91,6 +93,7 @@ export function createApp(deps: Deps) {
     )
     .get('/health', (c) => c.json({ status: 'ok' }))
     .route('/users', totp)
+    .route('/users', passkeyManagement)
     .route('/users', users)
     .route('/oauth', auth)
     .route('/oauth', passkeys)
