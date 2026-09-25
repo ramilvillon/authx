@@ -124,6 +124,21 @@ Deno.test('an unknown credential and garbage both come back as passkey_invalid',
   }
 })
 
+Deno.test("a different authenticator cannot sign in by presenting another credential's id", async () => {
+  const ctx = await enrolled() // ctx.auth is authenticator A, registered
+  const impostor = await createSoftAuthenticator() // authenticator B
+  const options = await ctx.svc.signInOptions()
+  const response = await impostor.authenticate(options)
+  // B's signature, wearing A's credential id: the lookup finds A's stored
+  // public key, so only the signature check itself can catch this.
+  const swapped = {
+    ...response,
+    id: ctx.auth.credentialId,
+    rawId: ctx.auth.credentialId,
+  }
+  assertEquals(await code(ctx.svc.verifySignIn(swapped)), 'passkey_invalid')
+})
+
 Deno.test('a counting authenticator whose counter goes backwards is refused', async () => {
   const ctx = await enrolled({ countsUses: true })
   await ctx.svc.verifySignIn(
