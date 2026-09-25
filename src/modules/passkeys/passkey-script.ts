@@ -29,10 +29,21 @@ ${b64u}
   if (!window.PublicKeyCredential) return;
   form.hidden = false;
   let options;
+  let optionsAt = 0;
   let ctrl;
-  const load = () => options ??= fetch('/oauth/authorize/passkey/options', {
-    method: 'POST', body: new URLSearchParams({ csrf_token: csrf(form) }),
-  }).then((r) => { if (!r.ok) throw new Error('options'); return r.json(); });
+  // The challenge inside 'options' expires after 5 minutes server-side; a
+  // page left open longer than that would otherwise keep submitting a dead
+  // one. Re-fetch once the cached options are older than 4 minutes.
+  const load = () => {
+    if (options && Date.now() - optionsAt > 4 * 60 * 1000) options = undefined;
+    if (!options) {
+      optionsAt = Date.now();
+      options = fetch('/oauth/authorize/passkey/options', {
+        method: 'POST', body: new URLSearchParams({ csrf_token: csrf(form) }),
+      }).then((r) => { if (!r.ok) throw new Error('options'); return r.json(); });
+    }
+    return options;
+  };
   const get = async (mediation) => {
     ctrl?.abort();
     // Captured in a local before the await: a concurrent call (the
@@ -80,7 +91,9 @@ ${b64u}
   // containing one) cannot close this element early and inject markup.
   // (Spelling it out literally here would do exactly that to this comment.)
   const next = ${JSON.stringify(continueHref).replace(/</g, '\\u003c')};
-  if (!window.PublicKeyCredential) { form.hidden = true; return; }
+  // No WebAuthn support: there is nothing this page can offer, so go straight
+  // on rather than show a Create button that can only ever fail.
+  if (!window.PublicKeyCredential) { location.href = next; return; }
   const post = (path, fields) => fetch(path, {
     method: 'POST', body: new URLSearchParams({ csrf_token: csrf(form), ...fields }),
   }).then((r) => { if (!r.ok) throw new Error(path); return r; });
