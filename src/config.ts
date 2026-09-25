@@ -81,6 +81,10 @@ const schema = z.object({
     },
     'TOTP_ENCRYPTION_KEY must be base64 of exactly 32 bytes (openssl rand -base64 32)',
   ),
+  // The WebAuthn relying-party id: the domain passkeys are bound to. Empty =
+  // passkeys off. Deliberately not derived from JWT_ISSUER: changing it later
+  // orphans every passkey already created, so it must be a conscious choice.
+  WEBAUTHN_RP_ID: z.string().default(''),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().default(''),
@@ -176,6 +180,9 @@ export type Config = {
   requireEmailVerification: boolean
   allowPasswordGrant: boolean
   totpEncryptionKey: string
+  // rpId '' = passkeys off. origin is the issuer's origin: the only page
+  // allowed to run a ceremony.
+  webauthn: { rpId: string; origin: string }
   smtp: {
     host: string
     port: number
@@ -205,6 +212,18 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error(`Invalid configuration: ${issues}`)
   }
   const e = parsed.data
+  const issuerUrl = new URL(e.JWT_ISSUER)
+  const rpId = e.WEBAUTHN_RP_ID
+  // Browsers only accept an RP id that is the page's host or a parent domain
+  // of it; catching that here beats every ceremony failing in production.
+  if (
+    rpId && issuerUrl.hostname !== rpId &&
+    !issuerUrl.hostname.endsWith(`.${rpId}`)
+  ) {
+    throw new Error(
+      'Invalid configuration: WEBAUTHN_RP_ID must be the JWT_ISSUER host or a parent domain of it',
+    )
+  }
   return {
     port: e.PORT,
     logLevel: e.LOG_LEVEL,
@@ -228,6 +247,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     requireEmailVerification: e.REQUIRE_EMAIL_VERIFICATION,
     allowPasswordGrant: e.ALLOW_PASSWORD_GRANT,
     totpEncryptionKey: e.TOTP_ENCRYPTION_KEY,
+    webauthn: { rpId, origin: issuerUrl.origin },
     smtp: {
       host: e.SMTP_HOST,
       port: e.SMTP_PORT,

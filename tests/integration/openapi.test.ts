@@ -22,6 +22,8 @@ Deno.test('documents every mounted route', async () => {
     ['/users/me/totp/confirm', 'post'],
     ['/users/me/totp', 'delete'],
     ['/users/{id}/totp', 'delete'],
+    ['/users/me/passkeys', 'get'],
+    ['/users/me/passkeys/{id}', 'delete'],
     ['/users', 'get'],
     ['/users/{id}', 'get'],
     ['/users/{id}', 'patch'],

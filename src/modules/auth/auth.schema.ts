@@ -84,6 +84,9 @@ export const authorizeQuerySchema = z.object({
   nonce: z.string().optional(),
   // OIDC: only 'login' is acted on (sign in again even with a live session).
   prompt: z.string().optional(),
+  // Not OIDC: how an app asks for the post-sign-in passkey offer on purpose,
+  // even with a dismiss cookie set. See offersPasskey in hosted.ts.
+  passkey: z.literal('add').optional(),
   code_challenge: z.string().min(1),
   code_challenge_method: z.literal('S256'),
 })
@@ -111,6 +114,17 @@ export const clientCredentialsResponseSchema = z.object({
 export type ClientCredentialsResponse = z.infer<
   typeof clientCredentialsResponseSchema
 >
+
+// The passkey sign-in POST: the authorize request plus the assertion the
+// browser produced, as JSON. Capped: a real assertion is a few KB.
+export const passkeyFormSchema = authorizeQuerySchema.extend({
+  credential: z.string().min(1).max(20_000),
+  // Optional for the same reason as on authorizeFormSchema.
+  csrf_token: z.string().optional(),
+})
+
+// The fetch() endpoints the hosted pages' scripts call.
+export const csrfOnlySchema = z.object({ csrf_token: z.string().optional() })
 
 export type TokenRequest = z.infer<typeof tokenRequestSchema>
 export type TokenPair = z.infer<typeof tokenPairSchema>

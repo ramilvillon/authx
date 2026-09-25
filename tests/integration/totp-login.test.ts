@@ -339,6 +339,20 @@ Deno.test('hosted login: a correct password does not reset the code-guess count'
   assertStringIncludes(await res.text(), 'That code is not valid')
 })
 
+Deno.test('the login form carries prompt through to its POST', async () => {
+  const ctx = await hostedSetup()
+  const q = new URLSearchParams({
+    client_id: ctx.clientId,
+    redirect_uri: REDIRECT,
+    scope: '',
+    code_challenge: await s256Challenge(VERIFIER),
+    code_challenge_method: 'S256',
+    prompt: 'login',
+  })
+  const page = await ctx.app.request(`/oauth/authorize?${q}`)
+  assertEquals(hiddenFields(await page.text()).prompt, 'login')
+})
+
 Deno.test('password grant: mfa_required does not reset the code-guess count', async () => {
   const ctx = await hostedSetup(LOCKOUT_ENV)
   const { recovery_codes } = await enroll(ctx)

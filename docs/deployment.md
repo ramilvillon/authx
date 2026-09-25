@@ -17,8 +17,14 @@
      authentication; leave it empty and its endpoints stay 404. No RBAC re-grant
      is needed for the operator reset route — it uses the existing
      `users:update:any`
+   - set `WEBAUTHN_RP_ID` to offer passkeys; leave it empty and passkeys stay
+     off. It must equal the `JWT_ISSUER` host or a parent domain of it, and
+     **changing it later orphans every passkey already created** — pick the
+     final domain before turning this on (see
+     [Configuration](configuration.md#passkeys-webauthn))
 2. **Run migrations** with `deno task db:migrate` on every release, before the
-   new version starts. Migration `0013_totp` adds the two-factor tables.
+   new version starts. Migration `0013_totp` adds the two-factor tables;
+   `0014_passkeys` adds the passkey and WebAuthn-challenge tables.
 3. **Seed once** with `deno task db:seed` and `BOOTSTRAP_ADMIN_EMAIL` /
    `BOOTSTRAP_ADMIN_PASSWORD` set. The seed refuses to adopt an existing account
    unless it is already a platform admin or the password matches, and fails

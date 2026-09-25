@@ -518,6 +518,19 @@ export function createAuthService(deps: {
       loginAttempts.clear(userId)
       return createSession(userId)
     },
+    // A passkey sign-in: the device plus user verification is already two
+    // factors, so no TOTP step. The account gates are the same as any login.
+    async createPasskeySession(
+      userId: string,
+    ): Promise<{ token: string; userId: string }> {
+      const user = await userRepo.findById(userId)
+      // findById skips soft-deleted rows, so a passkey outliving its account
+      // through the grace period cannot sign it in.
+      if (!user) throw AppError.of('passkey_invalid')
+      requireVerifiedEmail(user)
+      loginAttempts.clear(userId)
+      return createSession(userId)
+    },
     async exchangeAuthorizationCode(input: {
       code: string
       redirectUri: string

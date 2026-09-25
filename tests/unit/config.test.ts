@@ -210,3 +210,33 @@ Deno.test('TOTP_ENCRYPTION_KEY refuses the wrong length and non-base64', () => {
     )
   }
 })
+
+Deno.test('WEBAUTHN_RP_ID unset leaves passkeys off', () => {
+  assertEquals(loadConfig(base).webauthn, {
+    rpId: '',
+    origin: 'http://localhost:3000',
+  })
+})
+
+Deno.test('WEBAUTHN_RP_ID may be the issuer host or a parent of it', () => {
+  const issuer = { ...base, JWT_ISSUER: 'https://auth.example.com' }
+  assertEquals(
+    loadConfig({ ...issuer, WEBAUTHN_RP_ID: 'auth.example.com' }).webauthn,
+    { rpId: 'auth.example.com', origin: 'https://auth.example.com' },
+  )
+  assertEquals(
+    loadConfig({ ...issuer, WEBAUTHN_RP_ID: 'example.com' }).webauthn.rpId,
+    'example.com',
+  )
+})
+
+Deno.test('WEBAUTHN_RP_ID that is not the issuer host or a parent is refused', () => {
+  const issuer = { ...base, JWT_ISSUER: 'https://auth.example.com' }
+  for (const rpId of ['other.com', 'ample.com', 'evil.auth.example.com']) {
+    assertThrows(
+      () => loadConfig({ ...issuer, WEBAUTHN_RP_ID: rpId }),
+      Error,
+      'WEBAUTHN_RP_ID',
+    )
+  }
+})

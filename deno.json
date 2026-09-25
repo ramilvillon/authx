@@ -38,6 +38,8 @@
     "mysql2": "npm:mysql2@^3.11.5",
     "nodemailer": "npm:nodemailer@^10.0.10",
     "bcryptjs": "npm:bcryptjs@^2.4.3",
+    "@simplewebauthn/server": "jsr:@simplewebauthn/server@^13.3.0",
+    "@simplewebauthn/server/helpers": "jsr:@simplewebauthn/server@^13.3.0/helpers",
     "pino": "npm:pino@^9.5.0",
     "pino-pretty": "npm:pino-pretty@^13.0.0"
   },

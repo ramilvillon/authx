@@ -44,14 +44,14 @@ sequenceDiagram
 
 ## Features
 
-| Area               | What you get                                                                                                                  |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Sign-in**        | Email + password, Sign in with Google, SSO login page, TOTP two-factor with recovery codes, guest accounts that upgrade later |
-| **Protocols**      | OAuth 2.0 (password, refresh, authorization code + PKCE, client credentials), OIDC `id_token` + UserInfo                      |
-| **Authorization**  | Organizations, services, roles and permissions; audience-scoped tokens; M2M principals with their own roles                   |
-| **Account safety** | Email verification, password reset, confirmed email change and deletion, soft delete with a grace period                      |
-| **Token security** | Refresh rotation with reuse detection, key rotation via `kid`, `client_secret_basic` / `client_secret_post`                   |
-| **Operations**     | Rate limiting, proxy-aware client IPs, OpenAPI spec + Scalar docs at `/docs`, one-command local stack                         |
+| Area               | What you get                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Sign-in**        | Email + password, Sign in with Google, passkeys, SSO login page, TOTP two-factor with recovery codes, guest accounts that upgrade later |
+| **Protocols**      | OAuth 2.0 (password, refresh, authorization code + PKCE, client credentials), OIDC `id_token` + UserInfo                                |
+| **Authorization**  | Organizations, services, roles and permissions; audience-scoped tokens; M2M principals with their own roles                             |
+| **Account safety** | Email verification, password reset, confirmed email change and deletion, soft delete with a grace period                                |
+| **Token security** | Refresh rotation with reuse detection, key rotation via `kid`, `client_secret_basic` / `client_secret_post`                             |
+| **Operations**     | Rate limiting, proxy-aware client IPs, OpenAPI spec + Scalar docs at `/docs`, one-command local stack                                   |
 
 ## Quickstart
 
@@ -107,6 +107,12 @@ and `POST /users/me/totp/confirm`, which returns ten one-time recovery codes.
 From then on the hosted login page asks for a code after the password or Google,
 and the password grant answers `mfa_required`. See the
 [API reference](docs/api.md).
+
+**Passkeys.** Set `WEBAUTHN_RP_ID` and the hosted login page adds a "Sign in
+with a passkey" button plus autofill, and offers to create one right after a
+password, TOTP or Google sign-in. A passkey sign-in skips the TOTP prompt. List
+and delete your own passkeys with `GET`/`DELETE /users/me/passkeys`. See the
+[API reference](docs/api.md#passkeys-webauthn).
 
 **Service to service.** A confidential service trades its credentials for a
 short-lived token scoped to the target service:

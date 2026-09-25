@@ -22,6 +22,9 @@ import { createInMemoryVerificationTokenRepository } from '../src/modules/verifi
 import { createInMemoryTotpRepository } from '../src/modules/mfa/totp.repository.ts'
 import { createDrizzleTotpRepository } from '../src/modules/mfa/totp.repository.drizzle.ts'
 import { createTotpService } from '../src/modules/mfa/totp.service.ts'
+import { createInMemoryPasskeyRepository } from '../src/modules/passkeys/passkey.repository.ts'
+import { createDrizzlePasskeyRepository } from '../src/modules/passkeys/passkey.repository.drizzle.ts'
+import { createPasskeyService } from '../src/modules/passkeys/passkey.service.ts'
 import { currentStep, fromBase32, hotp } from '../src/lib/totp.ts'
 import { createVerificationService } from '../src/modules/verification/verification.service.ts'
 import { createUserService } from '../src/modules/users/users.service.ts'
@@ -74,6 +77,7 @@ export type TestContext = {
   orgRepo: ReturnType<typeof createInMemoryOrgRepository>
   rbacRepo: ReturnType<typeof createInMemoryRbacRepository>
   totpRepo: ReturnType<typeof createInMemoryTotpRepository>
+  passkeyRepo: ReturnType<typeof createInMemoryPasskeyRepository>
   sentEmails: { to: string; purpose: TokenPurpose; link: string }[]
 }
 
@@ -109,25 +113,35 @@ export function makeTestDeps(
       return Promise.resolve()
     },
   }
-  const verificationService = createVerificationService({
-    verificationRepo,
-    userRepo,
-    tokenRepo,
-    sessionRepo,
-    emailSender,
-    config,
-  })
   const socialRepo = testDb
     ? createDrizzleSocialAccountRepository(testDb)
     : createInMemorySocialAccountRepository()
   const totpRepo = testDb
     ? createDrizzleTotpRepository(testDb)
     : createInMemoryTotpRepository()
+  const passkeyRepo = testDb
+    ? createDrizzlePasskeyRepository(testDb)
+    : createInMemoryPasskeyRepository()
+  const verificationService = createVerificationService({
+    verificationRepo,
+    userRepo,
+    tokenRepo,
+    sessionRepo,
+    passkeyRepo,
+    emailSender,
+    config,
+  })
   const totpService = createTotpService({
     totpRepo,
     userRepo,
     issuer: config.issuer,
     encryptionKey: config.totpEncryptionKey,
+  })
+  const passkeyService = createPasskeyService({
+    passkeyRepo,
+    userRepo,
+    rpId: config.webauthn.rpId,
+    origin: config.webauthn.origin,
   })
   const deps: Deps = {
     config,
@@ -142,6 +156,7 @@ export function makeTestDeps(
       socialRepo,
       orgRepo,
       totpRepo,
+      passkeyRepo,
       allowPasswordGrant: config.allowPasswordGrant,
     }),
     authService: createAuthService({
@@ -160,6 +175,7 @@ export function makeTestDeps(
     adminService: createAdminService({ orgRepo, rbacRepo }),
     verificationService,
     totpService,
+    passkeyService,
   }
   return {
     deps,
@@ -172,6 +188,7 @@ export function makeTestDeps(
     orgRepo,
     rbacRepo,
     totpRepo,
+    passkeyRepo,
     sentEmails,
   }
 }
@@ -184,6 +201,7 @@ export function makeTestApp(envOverrides: Record<string, string> = {}) {
     orgRepo,
     rbacRepo,
     totpRepo,
+    passkeyRepo,
     sentEmails,
   } = makeTestDeps(envOverrides)
   return {
@@ -193,10 +211,17 @@ export function makeTestApp(envOverrides: Record<string, string> = {}) {
     orgRepo,
     rbacRepo,
     totpRepo,
+    passkeyRepo,
     totpService: deps.totpService,
+    passkeyService: deps.passkeyService,
+    userService: deps.userService,
     sentEmails,
   }
 }
+
+// Passkeys are off in tests unless asked for: turning them on changes every
+// password login (the enrolment offer), which most tests do not expect.
+export const PASSKEY_ENV = { WEBAUTHN_RP_ID: 'test.local' }
 
 // Seeds a default org + service and adds userId as a member.
 // Returns the audience string so callers can pass it to authHeader/passwordGrant.

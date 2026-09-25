@@ -12,6 +12,7 @@ import { createAuthService } from '../../src/modules/auth/auth.service.ts'
 import { createInMemorySocialAccountRepository } from '../../src/modules/auth/social.repository.ts'
 import { createInMemoryTotpRepository } from '../../src/modules/mfa/totp.repository.ts'
 import { createTotpService } from '../../src/modules/mfa/totp.service.ts'
+import { createInMemoryPasskeyRepository } from '../../src/modules/passkeys/passkey.repository.ts'
 import { loadConfig } from '../../src/config.ts'
 import { generateRsaKeyPairPem, loadKeyRing } from '../../src/lib/keys.ts'
 import type { Logger } from '../../src/lib/logger.ts'
@@ -49,6 +50,7 @@ function setup(opts: {
     socialRepo: createInMemorySocialAccountRepository(),
     orgRepo,
     totpRepo: createInMemoryTotpRepository(),
+    passkeyRepo: createInMemoryPasskeyRepository(),
     allowPasswordGrant: true,
   })
   const authService = createAuthService({
