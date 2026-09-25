@@ -77,5 +77,11 @@ export function createDrizzlePasskeyRepository(
       )
       return affected(a) + affected(b)
     },
+    async deleteAllPasskeysForUser(userId) {
+      const [res] = await db.delete(passkeys).where(
+        eq(passkeys.userId, userId),
+      )
+      return affected(res)
+    },
   }
 }

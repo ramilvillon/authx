@@ -194,6 +194,9 @@ export function createUserService(deps: {
       if (patch.passwordHash) {
         await tokenRepo.revokeAllForUser(id)
         await sessionRepo.revokeAllForUser(id)
+        // Same reasoning as the revocations above: a passkey enrolled while
+        // holding the old credentials must not outlive them either.
+        await passkeyRepo.deleteAllPasskeysForUser(id)
       }
       return toPublic(u)
     },

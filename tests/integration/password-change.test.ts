@@ -3,10 +3,12 @@ import {
   authHeader,
   keySet,
   makeTestApp,
+  PASSKEY_ENV,
   seedDefaultService,
   seedPlatformAdmin,
 } from '../helpers.ts'
 import { signAccessToken } from '../../src/lib/jwt.ts'
+import { createSoftAuthenticator } from '../soft-authenticator.ts'
 
 const PASSWORD = 'pw123456'
 
@@ -235,6 +237,36 @@ Deno.test('repeated failed password proofs are throttled', async () => {
     true,
     'the original password must survive the attempt',
   )
+})
+
+Deno.test('a self-service password change deletes every passkey on the account', async () => {
+  const { app, orgRepo, passkeyRepo, passkeyService } = makeTestApp(
+    PASSKEY_ENV,
+  )
+  const id = await registerAndId(app, 'has-passkey@b.com')
+  const audience = await seedDefaultService(orgRepo, id)
+  const auth = await createSoftAuthenticator()
+  const options = await passkeyService.registrationOptions(id, new Date())
+  await passkeyService.register(id, await auth.register(options))
+  assertEquals((await passkeyRepo.listForUser(id)).length, 1)
+
+  const { Authorization } = await authHeader(
+    app,
+    'has-passkey@b.com',
+    PASSWORD,
+    audience,
+  )
+  const res = await app.request(`/users/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      password: 'brand-new-pw-1',
+      current_password: PASSWORD,
+    }),
+  })
+
+  assertEquals(res.status, 200)
+  assertEquals((await passkeyRepo.listForUser(id)).length, 0)
 })
 
 Deno.test("an unauthenticated flood does not consume a victim's password-change budget", async () => {

@@ -2,6 +2,7 @@ import type { Config } from '../../config.ts'
 import type { UserRepository } from '../users/users.repository.ts'
 import type { RefreshTokenRepository } from '../auth/token.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
+import type { PasskeyRepository } from '../passkeys/passkey.repository.ts'
 import { hashPassword } from '../../lib/password.ts'
 import type { EmailSender } from '../../lib/email.ts'
 import type {
@@ -19,6 +20,7 @@ export function createVerificationService(deps: {
   userRepo: UserRepository
   tokenRepo: RefreshTokenRepository
   sessionRepo: SessionRepository
+  passkeyRepo: PasskeyRepository
   emailSender: EmailSender
   config: Config
 }) {
@@ -27,6 +29,7 @@ export function createVerificationService(deps: {
     userRepo,
     tokenRepo,
     sessionRepo,
+    passkeyRepo,
     emailSender,
     config,
   } = deps
@@ -213,9 +216,12 @@ export function createVerificationService(deps: {
         emailVerified: true,
       })
       // Reset is what someone reaches for BECAUSE they think they are
-      // compromised. Leaving the attacker's credentials alive defeats it.
+      // compromised. Leaving the attacker's credentials alive defeats it --
+      // and an attacker who enrolled their own passkey while in the account
+      // must lose it too, or the reset would not actually lock them out.
       await tokenRepo.revokeAllForUser(user.id)
       await sessionRepo.revokeAllForUser(user.id)
+      await passkeyRepo.deleteAllPasskeysForUser(user.id)
     },
     async verifyEmail(token: string): Promise<void> {
       const record = await verificationRepo.findByHash(await hashToken(token))

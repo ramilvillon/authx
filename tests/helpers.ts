@@ -113,14 +113,6 @@ export function makeTestDeps(
       return Promise.resolve()
     },
   }
-  const verificationService = createVerificationService({
-    verificationRepo,
-    userRepo,
-    tokenRepo,
-    sessionRepo,
-    emailSender,
-    config,
-  })
   const socialRepo = testDb
     ? createDrizzleSocialAccountRepository(testDb)
     : createInMemorySocialAccountRepository()
@@ -130,6 +122,15 @@ export function makeTestDeps(
   const passkeyRepo = testDb
     ? createDrizzlePasskeyRepository(testDb)
     : createInMemoryPasskeyRepository()
+  const verificationService = createVerificationService({
+    verificationRepo,
+    userRepo,
+    tokenRepo,
+    sessionRepo,
+    passkeyRepo,
+    emailSender,
+    config,
+  })
   const totpService = createTotpService({
     totpRepo,
     userRepo,

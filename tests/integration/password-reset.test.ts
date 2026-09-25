@@ -1,5 +1,11 @@
 import { assert, assertEquals } from '@std/assert'
-import { authHeader, makeTestApp, seedDefaultService } from '../helpers.ts'
+import {
+  authHeader,
+  makeTestApp,
+  PASSKEY_ENV,
+  seedDefaultService,
+} from '../helpers.ts'
+import { createSoftAuthenticator } from '../soft-authenticator.ts'
 
 const PASSWORD = 'pw123456'
 const NEW_PASSWORD = 'brand-new-pw-9'
@@ -111,6 +117,28 @@ Deno.test('a reset revokes every existing session and refresh token', async () =
     res.status >= 400,
     'refresh tokens minted before the reset must be dead',
   )
+})
+
+Deno.test('a reset deletes every passkey on the account', async () => {
+  const { app, orgRepo, passkeyRepo, passkeyService, sentEmails } = makeTestApp(
+    PASSKEY_ENV,
+  )
+  const id = await registerAndId(app, 'dana6@b.com')
+  await seedDefaultService(orgRepo, id)
+  const auth = await createSoftAuthenticator()
+  const options = await passkeyService.registrationOptions(id, new Date())
+  await passkeyService.register(id, await auth.register(options))
+  assertEquals((await passkeyRepo.listForUser(id)).length, 1)
+
+  await requestReset(app, 'dana6@b.com')
+  const res = await submitReset(
+    app,
+    tokenFrom(sentEmails.at(-1)!.link),
+    NEW_PASSWORD,
+  )
+
+  assertEquals(res.status, 204)
+  assertEquals((await passkeyRepo.listForUser(id)).length, 0)
 })
 
 Deno.test('a reset verifies the address, since clicking the link proves control of it', async () => {

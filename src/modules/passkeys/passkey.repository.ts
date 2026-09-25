@@ -34,6 +34,10 @@ export type PasskeyRepository = {
   ): Promise<boolean>
   deleteExpiredChallengesBefore(cutoff: Date): Promise<number>
   deleteAllForUser(userId: string): Promise<number>
+  // Passkeys only, not the user's challenges: used on password reset/change,
+  // where the point is revoking credentials, not clearing in-flight
+  // ceremonies (which expire on their own in 5 minutes anyway).
+  deleteAllPasskeysForUser(userId: string): Promise<number>
 }
 
 type ChallengeRow = {
@@ -115,6 +119,11 @@ export function createInMemoryPasskeyRepository(): PasskeyRepository {
       rows = rows.filter((r) => r.userId !== userId)
       challenges = challenges.filter((c) => c.userId !== userId)
       return Promise.resolve(before - rows.length - challenges.length)
+    },
+    deleteAllPasskeysForUser(userId) {
+      const before = rows.length
+      rows = rows.filter((r) => r.userId !== userId)
+      return Promise.resolve(before - rows.length)
     },
   }
 }

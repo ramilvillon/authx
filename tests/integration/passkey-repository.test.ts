@@ -116,3 +116,22 @@ Deno.test('expired challenges are pruned; deleteAllForUser clears both tables', 
   })
   assertEquals(await passkeyRepo.deleteAllForUser('u-1'), 2)
 })
+
+Deno.test('deleteAllPasskeysForUser removes only the passkeys, leaving challenges alone', async () => {
+  const { passkeyRepo } = makeTestDeps()
+  const now = new Date()
+  await passkeyRepo.create(row())
+  await passkeyRepo.createChallenge({
+    challengeHash: 'f'.repeat(64),
+    purpose: 'register',
+    userId: 'u-1',
+    expiresAt: new Date(now.getTime() + 60_000),
+  })
+  assertEquals(await passkeyRepo.deleteAllPasskeysForUser('u-1'), 1)
+  assertEquals(await passkeyRepo.listForUser('u-1'), [])
+  // The challenge row survives -- only the passkey and deleteAllForUser (the
+  // purge path) touch webauthn_challenges.
+  assert(
+    await passkeyRepo.consumeChallenge('f'.repeat(64), 'register', 'u-1', now),
+  )
+})

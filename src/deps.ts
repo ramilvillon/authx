@@ -84,6 +84,7 @@ export async function createDeps(config: Config, db: Database): Promise<Deps> {
     userRepo,
     tokenRepo,
     sessionRepo,
+    passkeyRepo,
     emailSender,
     config,
   })
