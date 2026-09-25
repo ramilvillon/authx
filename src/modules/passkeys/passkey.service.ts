@@ -181,6 +181,10 @@ export function createPasskeyService(deps: {
       }
       if (!result.verified) throw AppError.of('passkey_invalid')
       const info = result.registrationInfo
+      // ponytail: check-then-insert, not one atomic operation -- two parallel
+      // registrations can both pass this check and push the account a couple
+      // of passkeys past MAX_PASSKEYS. Upgrade path if that ever matters: a
+      // MySQL trigger, or a count column guarded by a CHECK constraint.
       if ((await passkeyRepo.listForUser(userId)).length >= MAX_PASSKEYS) {
         throw AppError.of('passkey_limit_reached')
       }
@@ -207,6 +211,12 @@ export function createPasskeyService(deps: {
         if (await already()) throw AppError.of('passkey_already_registered')
         throw err
       }
+    },
+
+    // Whether another passkey can be added right now. Used to skip the
+    // post-sign-in offer for an account that is already full.
+    async atLimit(userId: string): Promise<boolean> {
+      return (await passkeyRepo.listForUser(userId)).length >= MAX_PASSKEYS
     },
 
     async list(userId: string): Promise<PasskeySummary[]> {

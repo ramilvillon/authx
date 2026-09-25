@@ -7,6 +7,8 @@ import {
 } from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { createSoftAuthenticator } from '../soft-authenticator.ts'
+import { MAX_PASSKEYS } from '../../src/modules/passkeys/passkey.service.ts'
+import { hashToken } from '../../src/lib/tokens.ts'
 
 const REDIRECT = 'https://app.example/cb'
 const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
@@ -164,21 +166,55 @@ Deno.test('Not now remembers the choice and continues to the app', async () => {
   assertEquals(again.res.status, 302)
 })
 
-Deno.test('prompt=login shows the offer even after Not now, and its links drop prompt', async () => {
+Deno.test('prompt=login keeps only its OIDC meaning: it does not override Not now', async () => {
   const ctx = await setup()
   const { res } = await passwordLogin(
     ctx,
     { prompt: 'login' },
     'authx_passkey_offer=dismissed',
   )
+  // The dismiss cookie still holds: straight through to the app, no offer.
+  assertEquals(res.status, 302)
+})
+
+Deno.test('passkey=add shows the offer even after Not now, and its links drop prompt and passkey', async () => {
+  const ctx = await setup()
+  const { res } = await passwordLogin(
+    ctx,
+    { prompt: 'login', passkey: 'add' },
+    'authx_passkey_offer=dismissed',
+  )
   assertEquals(res.status, 200)
-  for (const href of links(await res.text())) {
-    assertEquals(
-      new URL(href, 'http://test.local').searchParams.has('prompt'),
-      false,
-      href,
-    )
+  const html = await res.text()
+  assertStringIncludes(html, 'Create passkey')
+  for (const href of links(html)) {
+    const params = new URL(href, 'http://test.local').searchParams
+    assertEquals(params.has('prompt'), false, href)
+    assertEquals(params.has('passkey'), false, href)
   }
+})
+
+Deno.test('an account already at the passkey limit gets no offer', async () => {
+  const ctx = await setup()
+  for (let i = 0; i < MAX_PASSKEYS; i++) {
+    await ctx.passkeyRepo.create({
+      id: crypto.randomUUID(),
+      userId: ctx.user.id,
+      credentialId: `c${i}`,
+      credentialIdHash: await hashToken(`c${i}`),
+      publicKey: 'cGs',
+      counter: 0,
+      transports: [],
+      aaguid: '00000000-0000-0000-0000-000000000000',
+      backedUp: false,
+      createdAt: new Date(),
+      lastUsedAt: null,
+    })
+  }
+  // passkey=add would otherwise force the offer past a dismiss cookie -- the
+  // limit must still win.
+  const { res } = await passwordLogin(ctx, { passkey: 'add' })
+  assertEquals(res.status, 302)
 })
 
 Deno.test('Create registers the passkey, which then signs in without an offer', async () => {

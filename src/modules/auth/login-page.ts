@@ -17,6 +17,7 @@ type AuthorizeFields = {
   code_challenge_method: string
   csrf_token: string
   prompt?: string
+  passkey?: string
 }
 
 // The authorize request and the CSRF token, carried by every hosted page that
@@ -31,6 +32,7 @@ export function authorizeHiddenFields(params: AuthorizeFields): string {
     hidden('state', params.state ?? ''),
     params.nonce ? hidden('nonce', params.nonce) : '',
     params.prompt ? hidden('prompt', params.prompt) : '',
+    params.passkey ? hidden('passkey', params.passkey) : '',
     hidden('code_challenge', params.code_challenge),
     hidden('code_challenge_method', params.code_challenge_method),
     hidden('csrf_token', params.csrf_token),

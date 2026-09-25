@@ -78,6 +78,7 @@ export function googleHref(
   if (!c.var.config.google.clientId) return undefined
   const params = authorizeParams(q)
   if (q.prompt) params.set('prompt', q.prompt)
+  if (q.passkey) params.set('passkey', q.passkey)
   return `${GOOGLE_PATH}?${params}`
 }
 
@@ -140,15 +141,19 @@ export function requireCsrf(c: Context<AppEnv>, token: string | undefined) {
   }
 }
 
-// Offer a passkey after a fresh sign-in that was not one. prompt=login is how
-// an app asks for the offer on purpose, so it overrides "Not now".
-function offersPasskey(
+// Offer a passkey after a fresh sign-in that was not one. passkey=add is how
+// an app asks for the offer on purpose (an explicit "Add passkey" entry
+// point), so it overrides "Not now" -- prompt=login keeps its OIDC meaning
+// only (sign in again) and does not, on its own, override the dismiss cookie.
+async function offersPasskey(
   c: Context<AppEnv>,
   q: AuthorizeQuery,
   method: LoginMethod,
-): boolean {
+  userId: string,
+): Promise<boolean> {
   if (method === 'passkey' || !c.var.passkeyService.enabled) return false
-  if (q.prompt?.split(' ').includes('login')) return true
+  if (await c.var.passkeyService.atLimit(userId)) return false
+  if (q.passkey === 'add') return true
   return getCookie(c, PASSKEY_OFFER_COOKIE) !== 'dismissed'
 }
 
@@ -165,11 +170,16 @@ export async function finishHostedLogin(
   setSessionCookie(c, session.token)
   // Both buttons continue through GET /oauth/authorize, which finds the
   // session just set and issues the code: no second code path, no state.
-  if (offersPasskey(c, q, method)) {
+  if (await offersPasskey(c, q, method, session.userId)) {
     const params = authorizeParams(q)
     return c.html(
       passkeyOfferPage(
-        { ...q, prompt: undefined, csrf_token: csrfToken(c) },
+        {
+          ...q,
+          prompt: undefined,
+          passkey: undefined,
+          csrf_token: csrfToken(c),
+        },
         `/oauth/authorize?${params}`,
         `/oauth/passkeys/dismiss?${params}`,
       ),

@@ -248,8 +248,10 @@ A passkey is bound to authx's own domain (the relying-party ID), so both
 creating and using one has to run in a browser page authx serves — this is not
 an API-only feature the way TOTP is. Passkeys are off unless `WEBAUTHN_RP_ID` is
 set (see [Configuration](configuration.md#passkeys-webauthn)); with it empty,
-the login page shows no passkey UI and every route below answers 404
-`passkey_not_configured`.
+the login page shows no passkey UI, the sign-in and enrolment routes below
+answer 404 `passkey_not_configured`, and the management routes (which require a
+bearer token first) do too once authenticated — an unauthenticated call to them
+still gets 401.
 
 ### Sign-in — the hosted login page
 
@@ -290,9 +292,12 @@ the code — enrolling never issues a code by itself.
 
 An app that wants an explicit **"Add passkey"** entry point (rather than waiting
 for the next sign-in) sends the user through the ordinary authorize URL with
-`prompt=login` added: this forces the sign-in page even with an active SSO
-session, and — unlike a dismissed offer on every other sign-in — `prompt=login`
-always shows the offer afterwards regardless of the dismiss cookie.
+`prompt=login&passkey=add` added: `prompt=login` forces the sign-in page even
+with an active SSO session (its ordinary OIDC meaning — it does nothing to the
+offer by itself); `passkey=add` is what makes the offer appear afterwards
+regardless of a dismiss cookie. Both are stripped from the continue/dismiss
+links so they do not linger past the one sign-in they were meant for. The offer
+is still skipped for an account already at the passkey limit.
 
 The two register routes require the SSO session cookie plus CSRF, and the
 session's sign-in must be **under 5 minutes old** (403 `fresh_login_required`
@@ -313,7 +318,10 @@ authenticator model (iCloud Keychain, Google Password Manager, a hardware key…
 from the public community AAGUID list — authx ships no name map, so mapping it
 to a display name is left to the caller. Delete needs only the bearer token: a
 stolen token can remove a passkey, but that only removes a convenience — the
-password or Google sign-in it was created after still works.
+password or Google sign-in it was created after still works. A password reset or
+a self-service password change deletes every passkey on the account: both are
+what someone reaches for because they believe the account is compromised, and a
+passkey enrolled under the old credentials must not outlive them.
 
 ### Errors
 

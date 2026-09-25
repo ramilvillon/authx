@@ -84,6 +84,9 @@ export const authorizeQuerySchema = z.object({
   nonce: z.string().optional(),
   // OIDC: only 'login' is acted on (sign in again even with a live session).
   prompt: z.string().optional(),
+  // Not OIDC: how an app asks for the post-sign-in passkey offer on purpose,
+  // even with a dismiss cookie set. See offersPasskey in hosted.ts.
+  passkey: z.literal('add').optional(),
   code_challenge: z.string().min(1),
   code_challenge_method: z.literal('S256'),
 })
