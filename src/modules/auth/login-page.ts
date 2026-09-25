@@ -65,7 +65,7 @@ export function loginPage(
   }
   ${
     passkeys
-      ? `<form id="passkey-form" method="post" action="/oauth/authorize/passkey">
+      ? `<form id="passkey-form" method="post" action="/oauth/authorize/passkey" hidden>
     ${authorizeHiddenFields(params)}
     <input type="hidden" name="credential">
     <button type="button" id="passkey-button">Sign in with a passkey</button>

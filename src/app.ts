@@ -63,9 +63,17 @@ export function createApp(deps: Deps) {
       '/oauth/authorize/passkey',
       makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
     )
+    // Its own budget, not `login`: this route only mints a challenge row and
+    // proves nothing about a credential, so sharing the login budget would
+    // let a page load's own conditional-mediation fetch halve how many
+    // password attempts the same visitor gets.
     .use(
       '/oauth/authorize/passkey/options',
-      makeRateLimiter(deps.rateStore, { windowMs, limit: 10, prefix: 'login' }),
+      makeRateLimiter(deps.rateStore, {
+        windowMs,
+        limit: 30,
+        prefix: 'passkey-options',
+      }),
     )
     .use(
       '/verify-email/resend',

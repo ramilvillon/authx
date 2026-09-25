@@ -23,7 +23,11 @@ ${b64u}
   const form = document.getElementById('passkey-form');
   const button = document.getElementById('passkey-button');
   const error = document.getElementById('passkey-error');
-  if (!window.PublicKeyCredential) { button.hidden = true; return; }
+  // The form ships hidden so a no-JS page never shows a button that does
+  // nothing; only unhide it once this script has actually run and the API
+  // exists.
+  if (!window.PublicKeyCredential) return;
+  form.hidden = false;
   let options;
   let ctrl;
   const load = () => options ??= fetch('/oauth/authorize/passkey/options', {
@@ -31,10 +35,14 @@ ${b64u}
   }).then((r) => { if (!r.ok) throw new Error('options'); return r.json(); });
   const get = async (mediation) => {
     ctrl?.abort();
-    ctrl = new AbortController();
+    // Captured in a local before the await: a concurrent call (the
+    // conditional-mediation call racing a button click) would otherwise read
+    // the new 'ctrl' this call itself just assigned, aborting itself instead
+    // of the one it meant to replace.
+    const c = ctrl = new AbortController();
     const o = await load();
     const cred = await navigator.credentials.get({
-      mediation, signal: ctrl.signal,
+      mediation, signal: c.signal,
       publicKey: { ...o, challenge: b64u.dec(o.challenge), allowCredentials: ids(o.allowCredentials) },
     });
     if (!cred) return;
@@ -68,7 +76,9 @@ export function passkeyRegisterScript(continueHref: string): string {
 ${b64u}
   const form = document.getElementById('passkey-register');
   const note = document.getElementById('passkey-error');
-  const next = ${JSON.stringify(continueHref)};
+  // Escaped so a redirect target ending in "</script>" (or containing one)
+  // cannot close this tag and inject markup.
+  const next = ${JSON.stringify(continueHref).replace(/</g, '\\u003c')};
   if (!window.PublicKeyCredential) { form.hidden = true; return; }
   const post = (path, fields) => fetch(path, {
     method: 'POST', body: new URLSearchParams({ csrf_token: csrf(form), ...fields }),

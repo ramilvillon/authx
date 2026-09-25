@@ -179,6 +179,30 @@ Deno.test('the options endpoint needs the CSRF token', async () => {
   assertEquals((await res.json()).error.code, 'csrf_token_invalid')
 })
 
+Deno.test('the options endpoint has its own rate budget, separate from login', async () => {
+  const ctx = await setup()
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery(ctx)}`,
+  )
+  const cookie = cookiesOf(page)
+  const hidden = hiddenFields(await page.text())
+  // 10 requests here would exhaust a shared `login` budget of 10 on its own
+  // (the page load above already spent one); each must still succeed.
+  for (let i = 0; i < 10; i++) {
+    const res = await ctx.app.request('/oauth/authorize/passkey/options', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf_token: hidden.csrf_token }),
+    })
+    assertEquals(res.status, 200, `request ${i}`)
+  }
+  // The login budget is untouched: another GET /oauth/authorize still works.
+  const again = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery(ctx)}`,
+  )
+  assertEquals(again.status, 200)
+})
+
 Deno.test('the login page offers passkeys only when they are on', async () => {
   const on = await setup()
   const onPage =
