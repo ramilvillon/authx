@@ -37,6 +37,12 @@ export type PruneCounts = {
 // Pruning on expiresAt is already TTL-relative: a row minted with a 90-day TTL
 // carries a 90-day expiresAt, so "expired more than N ago" holds whatever
 // REFRESH_TOKEN_TTL is set to, and one knob covers every table.
+//
+// webauthn_challenges is the one exception: consumeChallenge is what stops a
+// replay (single-use, via a conditional UPDATE), not an expired row surviving
+// into a retention window -- there is no reuse-detection story an old
+// challenge is protecting, unlike the tables above. So challenges are pruned
+// at `now`, not `cutoff`.
 export async function pruneExpired(
   repos: PrunableRepos,
   cutoff: Date,
@@ -52,7 +58,7 @@ export async function pruneExpired(
     repos.sessionRepo.deleteExpiredBefore(cutoff),
     repos.authCodeRepo.deleteExpiredBefore(cutoff),
     repos.verificationRepo.deleteExpiredBefore(cutoff),
-    repos.passkeyRepo.deleteExpiredChallengesBefore(cutoff),
+    repos.passkeyRepo.deleteExpiredChallengesBefore(new Date()),
   ])
   return {
     refreshTokens,

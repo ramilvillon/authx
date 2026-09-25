@@ -76,3 +76,30 @@ Deno.test('a dead row inside the retention window is kept, so reuse detection st
     'refresh token reuse',
   )
 })
+
+Deno.test('a webauthn challenge is pruned at now, not at the retention cutoff', async () => {
+  const ctx = makeTestDeps()
+  // Expired recently -- inside the 30-day retention window `cutoff` below
+  // would otherwise keep it (as the refresh-token test above expects for
+  // reuse detection). Challenges have no such story: consumeChallenge, not a
+  // surviving expired row, is what stops a replay.
+  await ctx.passkeyRepo.createChallenge({
+    challengeHash: 'a'.repeat(64),
+    purpose: 'authenticate',
+    userId: null,
+    expiresAt: new Date(Date.now() - days(10)),
+  })
+
+  const counts = await pruneExpired(ctx, new Date(Date.now() - days(30)))
+
+  assertEquals(counts.webauthnChallenges, 1)
+  assertEquals(
+    await ctx.passkeyRepo.consumeChallenge(
+      'a'.repeat(64),
+      'authenticate',
+      null,
+      new Date(),
+    ),
+    false,
+  )
+})
