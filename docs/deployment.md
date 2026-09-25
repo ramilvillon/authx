@@ -17,6 +17,11 @@
      authentication; leave it empty and its endpoints stay 404. No RBAC re-grant
      is needed for the operator reset route — it uses the existing
      `users:update:any`
+   - a database on another host is reached over verified TLS by default. Set
+     `DB_HOST` to the hostname on the server's certificate (an IP is refused),
+     and `DB_SSL_CA` if that certificate is from a private CA (RDS, a
+     self-managed CA). `DB_SSL=off` turns it off, e.g. over a private link you
+     trust
    - set `WEBAUTHN_RP_ID` to offer passkeys; leave it empty and passkeys stay
      off. It must equal the `JWT_ISSUER` host or a parent domain of it, and
      **changing it later orphans every passkey already created** — pick the
