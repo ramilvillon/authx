@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { decodeBase64 } from '@std/encoding'
+import { isIP } from 'node:net'
 
 const schema = z.object({
   PORT: z.coerce.number().default(3000),
@@ -9,6 +10,12 @@ const schema = z.object({
   DB_USER: z.string().min(1),
   DB_PASS: z.string().default(''),
   DB_NAME: z.string().min(1),
+  // Unset = required for any host but loopback (see dbSsl).
+  DB_SSL: z.preprocess(
+    (v) => v === '' ? undefined : v,
+    z.enum(['required', 'off']).optional(),
+  ),
+  DB_SSL_CA: z.string().default(''),
   JWT_PRIVATE_KEY: z.string().min(1),
   JWT_PUBLIC_KEY: z.string().min(1),
   JWT_ISSUER: z.string().min(1),
@@ -166,6 +173,7 @@ export type Config = {
     user: string
     password: string
     name: string
+    ssl: DbSsl
   }
   jwtPrivateKey: string
   jwtPublicKey: string
@@ -205,6 +213,40 @@ export type Config = {
   trustProxyHops: number
 }
 
+// false = plaintext. Otherwise the shape mysql2 and drizzle-kit take as `ssl`.
+export type DbSsl =
+  | false
+  | { ca?: string; rejectUnauthorized: true; verifyIdentity: true }
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1'])
+
+// Plaintext is the default only where there is no network to sniff. Anywhere
+// else the connection carries password hashes, sealed TOTP secrets and the DB
+// login itself, and an on-path attacker could also rewrite result rows. The
+// certificate is always verified: TLS without it stops a sniffer but not a
+// MITM. verifyIdentity is not optional either: mysql2 skips the hostname check
+// without it, so any cert a trusted CA ever issued -- for any domain -- would
+// pass. No CA = the system trust store; set DB_SSL_CA for a private CA (RDS).
+// Exported for drizzle.config.ts, which reads the env without loadConfig.
+export function dbSsl(
+  host: string,
+  mode: 'required' | 'off' | undefined,
+  ca: string,
+): DbSsl {
+  if ((mode ?? (LOOPBACK.has(host) ? 'off' : 'required')) === 'off') {
+    return false
+  }
+  // mysql2 never checks the certificate against an IP address, so TLS to one
+  // would verify the CA but not whose server it is.
+  if (isIP(host)) {
+    throw new Error(
+      'Invalid configuration: DB_SSL needs DB_HOST to be the hostname on the server certificate, not an IP address',
+    )
+  }
+  const verify = { rejectUnauthorized: true, verifyIdentity: true } as const
+  return ca ? { ca, ...verify } : verify
+}
+
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const parsed = schema.safeParse(env)
   if (!parsed.success) {
@@ -233,6 +275,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       user: e.DB_USER,
       password: e.DB_PASS,
       name: e.DB_NAME,
+      ssl: dbSsl(e.DB_HOST, e.DB_SSL, e.DB_SSL_CA),
     },
     jwtPrivateKey: e.JWT_PRIVATE_KEY,
     jwtPublicKey: e.JWT_PUBLIC_KEY,

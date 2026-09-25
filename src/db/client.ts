@@ -12,6 +12,7 @@ export function createDb(config: Config) {
     user: config.db.user,
     password: config.db.password,
     database: config.db.name,
+    ssl: config.db.ssl || undefined,
   })
   const db = drizzle(pool, { schema, mode: 'default' })
   return { db, pool }

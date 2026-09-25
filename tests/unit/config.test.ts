@@ -36,6 +36,7 @@ Deno.test('loadConfig parses and coerces env', () => {
     user: 'app',
     password: 'app',
     name: 'app',
+    ssl: false,
   })
 })
 
@@ -239,4 +240,58 @@ Deno.test('WEBAUTHN_RP_ID that is not the issuer host or a parent is refused', (
       'WEBAUTHN_RP_ID',
     )
   }
+})
+
+// The DB connection carries password hashes and the DB login: plaintext only
+// where there is no network in between, and TLS always verifies the server.
+const verified = { rejectUnauthorized: true, verifyIdentity: true } as const
+
+Deno.test('DB TLS is off by default for loopback hosts only', () => {
+  for (const DB_HOST of ['localhost', '127.0.0.1', '::1']) {
+    assertEquals(loadConfig({ ...base, DB_HOST }).db.ssl, false)
+  }
+  assertEquals(
+    loadConfig({ ...base, DB_HOST: 'db.internal' }).db.ssl,
+    verified,
+    'a remote host must default to verified TLS',
+  )
+})
+
+Deno.test('DB_SSL overrides the default, and an empty value means unset', () => {
+  assertEquals(loadConfig({ ...base, DB_SSL: 'required' }).db.ssl, verified)
+  assertEquals(
+    loadConfig({ ...base, DB_HOST: 'db.internal', DB_SSL: 'off' }).db.ssl,
+    false,
+  )
+  assertEquals(
+    loadConfig({ ...base, DB_HOST: 'db.internal', DB_SSL: '' }).db.ssl,
+    verified,
+  )
+  assertThrows(() => loadConfig({ ...base, DB_SSL: 'yes' }), Error, 'DB_SSL')
+})
+
+Deno.test('DB_SSL_CA is passed through for a private CA', () => {
+  assertEquals(
+    loadConfig({ ...base, DB_HOST: 'db.internal', DB_SSL_CA: 'PEM' }).db.ssl,
+    { ca: 'PEM', ...verified },
+  )
+})
+
+// mysql2 never checks a certificate against an IP, so TLS to one would verify
+// the CA but not whose server answered.
+Deno.test('DB TLS to an IP address is refused', () => {
+  assertThrows(
+    () => loadConfig({ ...base, DB_HOST: '10.0.0.5' }),
+    Error,
+    'not an IP address',
+  )
+  assertThrows(
+    () => loadConfig({ ...base, DB_HOST: '127.0.0.1', DB_SSL: 'required' }),
+    Error,
+    'not an IP address',
+  )
+  assertEquals(
+    loadConfig({ ...base, DB_HOST: '10.0.0.5', DB_SSL: 'off' }).db.ssl,
+    false,
+  )
 })
