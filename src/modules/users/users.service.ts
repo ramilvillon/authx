@@ -9,7 +9,10 @@ import type { RefreshTokenRepository } from '../auth/token.repository.ts'
 import type { AuthCodeRepository } from '../auth/authcode.repository.ts'
 import type { SocialAccountRepository } from '../auth/social.repository.ts'
 import type { OrgRepository } from '../orgs/orgs.repository.ts'
-import type { VerificationTokenRepository } from '../verification/verification.repository.ts'
+import {
+  ACCOUNT_CHANGING_PURPOSES,
+  type VerificationTokenRepository,
+} from '../verification/verification.repository.ts'
 import type { SessionRepository } from '../auth/session.repository.ts'
 import type { TotpRepository } from '../mfa/totp.repository.ts'
 import type { PasskeyRepository } from '../passkeys/passkey.repository.ts'
@@ -197,6 +200,7 @@ export function createUserService(deps: {
         // Same reasoning as the revocations above: a passkey enrolled while
         // holding the old credentials must not outlive them either.
         await passkeyRepo.deleteAllPasskeysForUser(id)
+        await verificationRepo.consumeAllForUser(id, ACCOUNT_CHANGING_PURPOSES)
       }
       return toPublic(u)
     },

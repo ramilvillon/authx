@@ -19,14 +19,15 @@ import {
   ROLE_ADMIN,
 } from './rbac-constants.ts'
 import { hashPassword, verifyPassword } from '../lib/password.ts'
+import { assertAcceptablePassword } from '../lib/password-policy.ts'
 
 // The password `.env.example` used to ship. A `.env` copied from that template
 // would seed a platform admin whose password is public, so refuse it.
 const SHIPPED_PLACEHOLDER_PASSWORD = 'change-me-please'
 
 // Returns the bootstrap admin credentials, or null when either half is unset
-// (step 5 below is skipped, exactly as before). Throws only for the pair that
-// would create an admin with the shipped placeholder password.
+// (step 5 below is skipped, exactly as before). Throws for a password the
+// policy refuses, and names the shipped placeholder specifically.
 export function bootstrapAdminFromEnv(
   email: string | undefined,
   password: string | undefined,
@@ -36,6 +37,15 @@ export function bootstrapAdminFromEnv(
     throw new Error(
       'BOOTSTRAP_ADMIN_PASSWORD is the placeholder from the old .env.example. ' +
         'Set a real password, or clear BOOTSTRAP_ADMIN_EMAIL/BOOTSTRAP_ADMIN_PASSWORD to skip the bootstrap admin.',
+    )
+  }
+  // The same policy a person choosing a password anywhere else gets. This
+  // account holds every platform permission, so it is the last one to exempt.
+  try {
+    assertAcceptablePassword(password)
+  } catch (e) {
+    throw new Error(
+      `BOOTSTRAP_ADMIN_PASSWORD is not acceptable: ${(e as Error).message}`,
     )
   }
   return { email, password }

@@ -18,11 +18,23 @@ Deno.test('bootstrapAdminFromEnv skips (does not refuse) a half-set pair', () =>
   assertEquals(bootstrapAdminFromEnv('admin@example.com', undefined), null)
 })
 
-Deno.test('bootstrapAdminFromEnv passes any other password through', () => {
-  assertEquals(bootstrapAdminFromEnv('a@b.com', 'change-me'), {
+Deno.test('bootstrapAdminFromEnv passes an acceptable password through', () => {
+  assertEquals(bootstrapAdminFromEnv('a@b.com', 'brand-new-pw-9'), {
     email: 'a@b.com',
-    password: 'change-me',
+    password: 'brand-new-pw-9',
   })
+})
+
+// The account holds every platform permission: it gets the same policy as a
+// password chosen anywhere else, not a one-string blocklist.
+Deno.test('bootstrapAdminFromEnv refuses a password the policy refuses', () => {
+  for (const pw of ['short', 'password123', 'x'.repeat(73)]) {
+    assertThrows(
+      () => bootstrapAdminFromEnv('admin@example.com', pw),
+      Error,
+      'BOOTSTRAP_ADMIN_PASSWORD',
+    )
+  }
 })
 
 // Step 5's decision about an account that already has BOOTSTRAP_ADMIN_EMAIL.
