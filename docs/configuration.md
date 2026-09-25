@@ -79,8 +79,12 @@ and set it up again.
 
 `WEBAUTHN_RP_ID` is the relying-party ID: the domain a passkey is bound to.
 Leave it empty (the default) and passkeys are off — the hosted login page shows
-no passkey button or autofill, the offer page never appears, and every passkey
-route (sign-in, enrolment, list, delete) answers 404 `passkey_not_configured`.
+no passkey button or autofill, the offer page never appears, and the sign-in and
+enrolment routes answer 404 `passkey_not_configured`. List and delete
+(`GET`/`DELETE /users/me/passkeys/:id`) run `requireAuth` first, like every
+other bearer-token route: a request with no valid access token gets 401
+regardless of configuration, and only an authenticated one reaches the config
+check and gets 404.
 
 Set it to the `JWT_ISSUER` host itself, or a parent domain of it (e.g.
 `JWT_ISSUER=https://auth.example.com` allows `auth.example.com` or
