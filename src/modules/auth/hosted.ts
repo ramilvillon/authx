@@ -4,6 +4,7 @@ import type { z } from 'zod'
 import type { AppEnv } from '../../deps.ts'
 import { authorizeQuerySchema } from './auth.schema.ts'
 import { loginPage } from './login-page.ts'
+import { passkeyOfferPage } from '../passkeys/passkey-offer-page.ts'
 import { AppError } from '../../lib/errors.ts'
 import { generateRefreshToken } from '../../lib/tokens.ts'
 import type { AppServiceRecord } from '../orgs/orgs.repository.ts'
@@ -11,8 +12,10 @@ import type { AppServiceRecord } from '../orgs/orgs.repository.ts'
 export const SESSION_COOKIE = 'authx_session'
 export const CSRF_COOKIE = 'authx_csrf'
 export const GOOGLE_PATH = '/oauth/google'
+export const PASSKEY_OFFER_COOKIE = 'authx_passkey_offer'
 
 export type AuthorizeQuery = z.infer<typeof authorizeQuerySchema>
+export type LoginMethod = 'password' | 'google' | 'totp' | 'passkey'
 
 // Double-submit: the same random value in a cookie and in a hidden form field.
 // An attacker's page can forge the field but cannot read or write a cookie on
@@ -137,6 +140,18 @@ export function requireCsrf(c: Context<AppEnv>, token: string | undefined) {
   }
 }
 
+// Offer a passkey after a fresh sign-in that was not one. prompt=login is how
+// an app asks for the offer on purpose, so it overrides "Not now".
+function offersPasskey(
+  c: Context<AppEnv>,
+  q: AuthorizeQuery,
+  method: LoginMethod,
+): boolean {
+  if (method === 'passkey' || !c.var.passkeyService.enabled) return false
+  if (q.prompt?.split(' ').includes('login')) return true
+  return getCookie(c, PASSKEY_OFFER_COOKIE) !== 'dismissed'
+}
+
 // Where every hosted sign-in ends: the SSO session, then a code to the
 // client. One place, so the passkey path and the enrolment offer need no
 // copies of it.
@@ -145,8 +160,22 @@ export async function finishHostedLogin(
   q: AuthorizeQuery,
   service: AppServiceRecord,
   session: { token: string; userId: string },
+  method: LoginMethod,
 ): Promise<Response> {
   setSessionCookie(c, session.token)
+  // Both buttons continue through GET /oauth/authorize, which finds the
+  // session just set and issues the code: no second code path, no state.
+  if (offersPasskey(c, q, method)) {
+    const params = authorizeParams(q)
+    return c.html(
+      passkeyOfferPage(
+        { ...q, prompt: undefined, csrf_token: csrfToken(c) },
+        `/oauth/authorize?${params}`,
+        `/oauth/passkeys/dismiss?${params}`,
+      ),
+      200,
+    )
+  }
   const code = await c.var.authService.issueAuthorizationCode(
     session.userId,
     service,

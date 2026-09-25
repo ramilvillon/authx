@@ -438,7 +438,7 @@ const auth = new Hono<AppEnv>()
         return renderLogin(c, f, 'Invalid email or password', 401)
       }
       if (login.kind === 'mfa') return startMfa(c, f, login.userId)
-      return finishHostedLogin(c, f, service, login)
+      return finishHostedLogin(c, f, service, login, 'password')
     },
   )
   .post(
@@ -472,7 +472,7 @@ const auth = new Hono<AppEnv>()
         return renderTotp(c, f, MFA_CODE_ERROR, 401)
       }
       deleteCookie(c, MFA_COOKIE, { path: MFA_PATH })
-      return finishHostedLogin(c, f, service, login)
+      return finishHostedLogin(c, f, service, login, 'totp')
     },
   )
   .post('/logout', async (c) => {
@@ -593,7 +593,7 @@ const auth = new Hono<AppEnv>()
       }
       deleteCookie(c, GOOGLE_AUTHORIZE_COOKIE, { path: GOOGLE_PATH })
       if (login.kind === 'mfa') return startMfa(c, pending, login.userId)
-      return finishHostedLogin(c, pending, service, login)
+      return finishHostedLogin(c, pending, service, login, 'google')
     },
   )
 

@@ -1,5 +1,10 @@
 import { assert, assertEquals, assertStringIncludes } from '@std/assert'
-import { makeTestApp, submitTotpForm, totpCode } from '../helpers.ts'
+import {
+  makeTestApp,
+  PASSKEY_ENV,
+  submitTotpForm,
+  totpCode,
+} from '../helpers.ts'
 import { s256Challenge } from '../../src/lib/pkce.ts'
 import { signAccessToken, verifyAccessToken } from '../../src/lib/jwt.ts'
 import { keySet } from '../helpers.ts'
@@ -501,4 +506,21 @@ Deno.test('the Google link keeps prompt', async () => {
     `/oauth/authorize?${await authorizeQuery({ prompt: 'login' })}`,
   )
   assertStringIncludes(await page.text(), 'prompt=login')
+})
+
+Deno.test('a Google sign-in is followed by the passkey offer when passkeys are on', async () => {
+  const ctx = makeTestApp({ ...GOOGLE_ENV, ...PASSKEY_ENV })
+  await seed(ctx)
+  const { cookie, state } = await start(ctx.app)
+  const google = stubGoogle(PROFILE)
+  let res: Response
+  try {
+    res = await ctx.app.request(`/oauth/google?code=good-code&state=${state}`, {
+      headers: { cookie },
+    })
+  } finally {
+    google.restore()
+  }
+  assertEquals(res.status, 200)
+  assertStringIncludes(await res.text(), 'Create passkey')
 })
