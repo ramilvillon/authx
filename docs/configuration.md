@@ -83,11 +83,11 @@ no passkey button or autofill, the offer page never appears, and every passkey
 route (sign-in, enrolment, list, delete) answers 404 `passkey_not_configured`.
 
 Set it to the `JWT_ISSUER` host itself, or a parent domain of it (e.g.
-`ISSUER=https://auth.example.com` allows `auth.example.com` or `example.com`);
-config loading throws on startup otherwise. The expected origin for every
-ceremony is the issuer's origin, and there is no separate `rpName` setting — the
-RP ID is used for both. WebAuthn requires https, with the usual exception for
-`localhost`.
+`JWT_ISSUER=https://auth.example.com` allows `auth.example.com` or
+`example.com`); config loading throws on startup otherwise. The expected origin
+for every ceremony is the issuer's origin, and there is no separate `rpName`
+setting — the RP ID is used for both. WebAuthn requires https, with the usual
+exception for `localhost`.
 
 **Pick the final domain before turning this on: changing `WEBAUTHN_RP_ID` later
 orphans every passkey already created under the old value** — a passkey is
