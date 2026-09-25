@@ -138,6 +138,22 @@ Deno.test('garbage in the credential field is a 401 page, not a 500', async () =
   }
 })
 
+Deno.test('a garbage credential without an HTML Accept header is a JSON 401, not the login page', async () => {
+  const ctx = await setup()
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery(ctx)}`,
+  )
+  const cookie = cookiesOf(page)
+  const hidden = hiddenFields(await page.text())
+  const res = await ctx.app.request('/oauth/authorize/passkey', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ...hidden, credential: 'not json' }),
+  })
+  assertEquals(res.status, 401)
+  assertEquals((await res.json()).error.code, 'passkey_invalid')
+})
+
 Deno.test('a tampered redirect_uri is refused before any session', async () => {
   const ctx = await setup()
   const { res } = await passkeySignIn(ctx, {
@@ -166,6 +182,49 @@ Deno.test('REQUIRE_EMAIL_VERIFICATION applies to a passkey sign-in', async () =>
   const { res } = await passkeySignIn(ctx)
   assertEquals(res.status, 403)
   assertStringIncludes(await res.text(), 'verify your email')
+})
+
+Deno.test('a CSRF token mismatch on the sign-in POST re-renders the login page', async () => {
+  const ctx = await setup()
+  const page = await ctx.app.request(
+    `/oauth/authorize?${await authorizeQuery(ctx)}`,
+  )
+  const cookie = cookiesOf(page)
+  const hidden = hiddenFields(await page.text())
+  const res = await ctx.app.request('/oauth/authorize/passkey', {
+    method: 'POST',
+    headers: {
+      cookie,
+      accept: 'text/html',
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      ...hidden,
+      csrf_token: 'wrong-token',
+      credential: '{}',
+    }),
+  })
+  assertEquals(res.status, 403)
+  assertStringIncludes(await res.text(), 'no longer valid')
+})
+
+Deno.test('every passkey route is 404 when passkeys are off, even the sign-in POST and register routes', async () => {
+  const off = await setup({})
+  const body = new URLSearchParams({ credential: '{}' })
+  for (
+    const path of [
+      '/oauth/authorize/passkey',
+      '/oauth/passkeys/register/options',
+      '/oauth/passkeys/register',
+    ]
+  ) {
+    const res = await off.app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+    assertEquals(res.status, 404, path)
+  }
 })
 
 Deno.test('the options endpoint needs the CSRF token', async () => {

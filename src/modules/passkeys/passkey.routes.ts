@@ -54,7 +54,13 @@ async function signedInSession(c: Context<AppEnv>) {
   return session
 }
 
-// Mounted at /oauth. Both routes sit under the login IP limiter (app.ts).
+// Mounted at /oauth. Rate limiting (app.ts): /authorize/passkey shares the
+// strict `login` IP budget with the password and TOTP routes; its /options
+// sibling gets its own `passkey-options` budget since it only mints a
+// challenge and proves nothing about a credential. The register/dismiss
+// routes below carry no route-specific limiter -- they need a fresh SSO
+// session already, so there is no unauthenticated credential attempt to
+// throttle; only the lenient global limiter applies.
 const passkeys = new Hono<AppEnv>()
   .post(
     '/authorize/passkey/options',
@@ -87,6 +93,10 @@ const passkeys = new Hono<AppEnv>()
         )
         session = await c.var.authService.createPasskeySession(userId)
       } catch (err) {
+        // A script (no text/html in Accept) gets the JSON error, as the CSRF
+        // path already does -- an HTML re-render would be wasted on a caller
+        // that cannot show it.
+        if (!c.req.header('accept')?.includes('text/html')) throw err
         if (!(err instanceof AppError)) throw err
         // Only reachable with a valid passkey, so it reveals nothing.
         if (err.code === 'email_not_verified') {
