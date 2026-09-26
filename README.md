@@ -36,10 +36,15 @@ sequenceDiagram
     participant authx
     participant API as Your API
     App->>authx: sign in (password, Google or passkey, plus TOTP if on)
-    authx-->>App: access token (aud=billing, scope=invoices:read …)
-    App->>API: Authorization: Bearer #lt;token#gt;
-    API->>API: verify signature with cached JWKS, check scope
-    API-->>App: 200, with no call to authx
+    authx-->>App: access token (aud=billing, scope=invoices:read …) + refresh token
+    loop every API call while the access token is valid
+        App->>API: Authorization: Bearer #lt;token#gt;
+        API->>API: verify signature with cached JWKS, check aud and scope
+        API-->>App: 200, with no call to authx
+    end
+    Note over App,authx: access token expires (15 min by default)
+    App->>authx: POST /oauth/token grant_type=refresh_token
+    authx-->>App: new access token + new refresh token (old one is spent)
 ```
 
 ## Features
