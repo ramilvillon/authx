@@ -179,11 +179,11 @@ Deno.test('unverifiableEmailWarning fires only when the gate is on and no email 
   assertStringIncludes(w(true, '', false) ?? '', 'REQUIRE_EMAIL_VERIFICATION')
 })
 
-Deno.test('ALLOW_PASSWORD_GRANT is on unless set to false, and warns while on', () => {
-  assertEquals(loadConfig(base).allowPasswordGrant, true)
+Deno.test('ALLOW_PASSWORD_GRANT is off unless set to true, and warns while on', () => {
+  assertEquals(loadConfig(base).allowPasswordGrant, false)
   assertEquals(
-    loadConfig({ ...base, ALLOW_PASSWORD_GRANT: 'false' }).allowPasswordGrant,
-    false,
+    loadConfig({ ...base, ALLOW_PASSWORD_GRANT: 'true' }).allowPasswordGrant,
+    true,
   )
   assertStringIncludes(passwordGrantWarning(true) ?? '', 'RFC 9700')
   assertEquals(passwordGrantWarning(false), null)

@@ -51,6 +51,13 @@ and success is **200** with an empty body — including for a token that is
 unknown, already expired or already revoked, since the state the caller asked
 for already holds.
 
+Refresh tokens rotate: each use returns a new one and retires the old. Replaying
+a retired token is treated as theft and revokes every refresh token the user
+holds, except within `REFRESH_TOKEN_REUSE_GRACE` seconds (default 30) of its
+rotation: then it is refused with `invalid_grant` and nothing else is revoked,
+so two tabs refreshing at once do not sign the user out. The losing tab should
+re-read the token the winning one stored.
+
 `/oauth/token` and `/oauth/revoke` follow RFC 6749: they take
 `application/x-www-form-urlencoded` bodies (what OAuth client libraries send),
 and also accept JSON. A confidential client authenticates with HTTP Basic
@@ -387,9 +394,9 @@ token with a password grant for `audience: "platform"`.
 The password grant is on by default for compatibility, but RFC 9700 (the OAuth
 2.0 Security BCP) says it MUST NOT be used: the client handles the user's
 password, and there is no page on which to add MFA or consent. New clients
-should use the authorization code flow with PKCE. `ALLOW_PASSWORD_GRANT=false`
-refuses it with `unsupported_grant_type` and drops it from discovery; a future
-release makes that the default.
+should use the authorization code flow with PKCE. It is off by default:
+`/oauth/token` refuses it with `unsupported_grant_type` and discovery omits it
+unless `ALLOW_PASSWORD_GRANT=true`.
 
 Example password-grant flow (`username` accepts a registered user's email or a
 guest's generated username):
@@ -512,8 +519,9 @@ Every endpoint except the two token endpoints (below) uses one envelope:
 { "error": { "code": "<machine_code>", "message": "..." } }
 ```
 
-The HTTP status reflects the error class (400 / 401 / 403 / 404 / 409). `code`
-is a stable machine-readable identifier from the catalogue in
+The HTTP status reflects the error class (400 / 401 / 403 / 404 / 409 / 429).
+Every rate limiter answers 429 `rate_limited` with a `Retry-After` header.
+`code` is a stable machine-readable identifier from the catalogue in
 `src/lib/errors.ts` (e.g. `invalid_grant`, `user_not_found`, `email_taken`).
 Clients should branch on `code`, not on the human-readable `message` — messages
 may be revised without a version bump; codes are stable.
@@ -538,6 +546,7 @@ section 5.2 defines, because OAuth client libraries parse `error` as a string:
 | `invalid_target`         | 400    | the `audience` names no service (RFC 8707)                                                                                                           |
 | `mfa_required`           | 400    | the password grant's credentials were correct, but the account has two-factor authentication on; sign in through the authorization code flow instead |
 | `invalid_client`         | 401    | client authentication failed; carries `WWW-Authenticate: Basic` when the client used HTTP Basic                                                      |
+| `rate_limited`           | 429    | too many requests from this address; `Retry-After` gives the seconds to wait (not an RFC 6749 code: the RFC defines none for rate limiting)          |
 
 `error_description` carries the catalogue message, so the specific reason (for
 example reuse detection) stays readable. Branch on `error`.

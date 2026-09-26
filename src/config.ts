@@ -41,6 +41,10 @@ const schema = z.object({
   }),
   ACCESS_TOKEN_TTL: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
+  // Seconds after a rotation during which replaying the old refresh token is
+  // refused WITHOUT revoking the family: two tabs refreshing at once is not
+  // theft. 0 = every replay revokes the family.
+  REFRESH_TOKEN_REUSE_GRACE: z.coerce.number().int().min(0).default(30),
   SSO_SESSION_TTL: z.coerce.number().default(2592000),
   AUTH_CODE_TTL: z.coerce.number().default(60),
   EMAIL_VERIFICATION_TTL: z.coerce.number().default(86400),
@@ -67,11 +71,10 @@ const schema = z.object({
   // unverifiableEmailWarning for the setting that makes this a lockout.
   REQUIRE_EMAIL_VERIFICATION: z.enum(['true', 'false']).default('false')
     .transform((v) => v === 'true'),
-  // grant_type=password at /oauth/token. On by default only because existing
-  // callers, guest accounts and the quickstart still use it; RFC 9700 says it
-  // MUST NOT be used, so main.ts warns while it is on. The default flips once
-  // the quickstart leads with the code flow.
-  ALLOW_PASSWORD_GRANT: z.enum(['true', 'false']).default('true')
+  // grant_type=password at /oauth/token. Off by default: RFC 9700 says it MUST
+  // NOT be used, so main.ts warns whenever it is turned on. Guest accounts
+  // sign in with it, so they need it on.
+  ALLOW_PASSWORD_GRANT: z.enum(['true', 'false']).default('false')
     .transform((v) => v === 'true'),
   // AES-256 key sealing TOTP secrets at rest (a TOTP secret cannot be hashed:
   // the server needs it to compute codes). Empty = two-factor setup is not
@@ -181,6 +184,7 @@ export type Config = {
   jwtPreviousPublicKeys: string[]
   accessTokenTtl: number
   refreshTokenTtl: number
+  refreshTokenReuseGrace: number
   ssoSessionTtl: number
   authCodeTtl: number
   emailVerificationTtl: number
@@ -283,6 +287,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     jwtPreviousPublicKeys: e.JWT_PREVIOUS_PUBLIC_KEYS,
     accessTokenTtl: e.ACCESS_TOKEN_TTL,
     refreshTokenTtl: e.REFRESH_TOKEN_TTL,
+    refreshTokenReuseGrace: e.REFRESH_TOKEN_REUSE_GRACE,
     ssoSessionTtl: e.SSO_SESSION_TTL,
     authCodeTtl: e.AUTH_CODE_TTL,
     emailVerificationTtl: e.EMAIL_VERIFICATION_TTL,
@@ -370,6 +375,5 @@ export function passwordGrantWarning(
     'which RFC 9700 (OAuth 2.0 Security BCP) says MUST NOT be used. Move ' +
     'clients to the authorization code flow with PKCE, then set ' +
     'ALLOW_PASSWORD_GRANT=false. Guest accounts sign in with this grant, so ' +
-    'guest creation is refused while it is off. A future release turns it ' +
-    'off by default.'
+    'guest creation is refused while it is off.'
 }

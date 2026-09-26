@@ -2,6 +2,7 @@ import type { Config } from '../../config.ts'
 import type { UserRecord, UserRepository } from '../users/users.repository.ts'
 import type {
   NewRefreshToken,
+  RefreshTokenRecord,
   RefreshTokenRepository,
 } from './token.repository.ts'
 import type { SocialAccountRepository } from './social.repository.ts'
@@ -132,6 +133,21 @@ export function createAuthService(deps: {
     if (service.type === 'public') return true
     return service.clientSecretHash !== null && secret !== undefined &&
       (await hashToken(secret)) === service.clientSecretHash
+  }
+
+  // REFRESH_TOKEN_REUSE_GRACE: a token ROTATED (not revoked) moments ago is
+  // most likely a second tab or a retried request that lost the race, so the
+  // caller is refused but the family survives and the winner's token keeps
+  // working. The cost: a thief who rotates first is not caught by a victim
+  // replaying inside the window. An explicit revoke has no replacedBy, so
+  // replaying one is never graced.
+  // The explicit `> 0`: MySQL rounds revoked_at to the nearest second, so it
+  // can sit up to half a second in the future and the difference goes
+  // negative; without it, 0 would still grace an immediate replay.
+  function justRotated(t: RefreshTokenRecord): boolean {
+    return config.refreshTokenReuseGrace > 0 &&
+      t.replacedBy != null && t.revokedAt != null &&
+      Date.now() - t.revokedAt.getTime() < config.refreshTokenReuseGrace * 1000
   }
 
   // RFC 6749 section 6 / RFC 7009 section 2.1: using or revoking a refresh
@@ -280,6 +296,7 @@ export function createAuthService(deps: {
       const isExpired = existing.expiresAt.getTime() <= Date.now()
       // Reuse of an already-revoked token signals theft: revoke the whole family.
       if (existing.revokedAt) {
+        if (justRotated(existing)) throw AppError.of('invalid_refresh_token')
         await tokenRepo.revokeAllForUser(existing.userId)
         throw AppError.of('refresh_token_reuse')
       }
@@ -326,6 +343,8 @@ export function createAuthService(deps: {
       // Atomic rotation; a false result means a concurrent rotation already
       // consumed this token (replay), so revoke the family and reject.
       if (!(await tokenRepo.rotate(existing.id, next))) {
+        const now = await tokenRepo.findByHash(hash)
+        if (now && justRotated(now)) throw AppError.of('invalid_refresh_token')
         await tokenRepo.revokeAllForUser(existing.userId)
         throw AppError.of('refresh_token_reuse')
       }

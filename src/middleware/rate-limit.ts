@@ -3,6 +3,7 @@ import { getConnInfo } from 'hono/deno'
 import type { Context } from 'hono'
 import type { AppEnv } from '../deps.ts'
 import type { RateLimitStore } from '../lib/rate-limit-store.ts'
+import { ERRORS } from '../lib/errors.ts'
 
 // Resolves a stable client identifier that an unauthenticated caller cannot
 // trivially spoof. Reverse proxies *append* the peer they observed to
@@ -31,6 +32,8 @@ function clientKey(c: Context<AppEnv>): string {
   }
 }
 
+const TOKEN_ENDPOINTS = new Set(['/oauth/token', '/oauth/revoke'])
+
 // `prefix` namespaces keys so multiple limiters can share one store without
 // double-counting the same client (e.g. a global limiter and a stricter
 // per-endpoint one).
@@ -50,6 +53,16 @@ export function makeRateLimiter(
     windowMs: opts.windowMs,
     limit: opts.limit,
     standardHeaders: 'draft-6',
+    // The library's default body is plain text, which OAuth client libraries
+    // reject as the wrong content type. JSON instead, in the shape the path
+    // already answers errors in: flat RFC 6749 on the token endpoints, the
+    // catalogue's everywhere else.
+    message: (c: Context<AppEnv>) => {
+      const { message } = ERRORS.rate_limited
+      return TOKEN_ENDPOINTS.has(c.req.path)
+        ? { error: 'rate_limited', error_description: message }
+        : { error: { code: 'rate_limited', message } }
+    },
     skipSuccessfulRequests: opts.countOnly !== undefined,
     requestWasSuccessful: (c) => !opts.countOnly!(c.res.status),
     keyGenerator: (c) => `${prefix}:${clientKey(c)}`,

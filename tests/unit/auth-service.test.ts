@@ -33,6 +33,7 @@ function setup(opts: {
     JWT_PRIVATE_KEY: privateKeyPem,
     JWT_PUBLIC_KEY: publicKeyPem,
     JWT_ISSUER: 'http://localhost:3000',
+    ALLOW_PASSWORD_GRANT: 'true',
     ...opts.env,
   })
   const userRepo = createInMemoryUserRepository({ user: [] })
@@ -156,7 +157,9 @@ Deno.test('refresh grant stops working once the user is removed from the org', a
 })
 
 Deno.test('reusing a rotated refresh token revokes the whole family', async () => {
-  const { authService, userService, orgRepo } = setup()
+  const { authService, userService, orgRepo } = setup({
+    env: { REFRESH_TOKEN_REUSE_GRACE: '0' },
+  })
   const user = await userService.register({
     email: 'a@b.com',
     password: 'pw123456',
@@ -174,6 +177,48 @@ Deno.test('reusing a rotated refresh token revokes the whole family', async () =
   // ...and the family is revoked, so the previously-valid token is dead too.
   await assertRejects(
     () => authService.refreshGrant(second.refresh_token),
+    Error,
+    'reuse detected',
+  )
+})
+
+Deno.test('replaying a just-rotated refresh token is refused but keeps the family', async () => {
+  // Two tabs refreshing at once: the loser must not sign everyone out.
+  const { authService, userService, orgRepo } = setup()
+  const user = await userService.register({
+    email: 'a@b.com',
+    password: 'pw123456',
+  })
+  const audience = await seedService(orgRepo, user.id)
+  const first = await authService.passwordGrant('a@b.com', 'pw123456', audience)
+  const second = await authService.refreshGrant(first.refresh_token)
+
+  await assertRejects(
+    () => authService.refreshGrant(first.refresh_token),
+    Error,
+    'invalid refresh token',
+  )
+  assert((await authService.refreshGrant(second.refresh_token)).access_token)
+})
+
+Deno.test('replaying an explicitly revoked refresh token is never graced', async () => {
+  const { authService, userService, orgRepo } = setup()
+  const user = await userService.register({
+    email: 'a@b.com',
+    password: 'pw123456',
+  })
+  const audience = await seedService(orgRepo, user.id)
+  const a = await authService.passwordGrant('a@b.com', 'pw123456', audience)
+  const b = await authService.passwordGrant('a@b.com', 'pw123456', audience)
+  await authService.revoke(a.refresh_token)
+
+  await assertRejects(
+    () => authService.refreshGrant(a.refresh_token),
+    Error,
+    'reuse detected',
+  )
+  await assertRejects(
+    () => authService.refreshGrant(b.refresh_token),
     Error,
     'reuse detected',
   )
