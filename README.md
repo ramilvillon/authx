@@ -35,9 +35,9 @@ sequenceDiagram
     participant App as Your app
     participant authx
     participant API as Your API
-    App->>authx: sign in (password, Google, or SSO code + PKCE)
-    authx-->>App: access token (aud=billing, scope="invoices:read …")
-    App->>API: Authorization: Bearer <token>
+    App->>authx: sign in (password, Google or passkey, plus TOTP if on)
+    authx-->>App: access token (aud=billing, scope=invoices:read …)
+    App->>API: Authorization: Bearer #lt;token#gt;
     API->>API: verify signature with cached JWKS, check scope
     API-->>App: 200, with no call to authx
 ```
