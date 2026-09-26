@@ -71,7 +71,9 @@ make bootstrap  # starts MySQL + Mailpit, migrates, seeds your admin
 make dev        # API on http://localhost:3000, API docs at /docs
 ```
 
-Get a token (form-encoded, as RFC 6749 specifies):
+Get a token (form-encoded, as RFC 6749 specifies). This uses the password grant,
+which `.env.example` turns on for local development only; it is off by default,
+and apps sign users in with the code flow below:
 
 ```bash
 curl -X POST localhost:3000/oauth/token \

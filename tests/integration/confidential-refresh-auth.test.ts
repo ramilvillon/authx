@@ -248,7 +248,7 @@ Deno.test("refresh: a public token presented with another service's client_id is
 
 Deno.test('refresh: replaying a rotated public token still revokes the family', async () => {
   // The reordering must not have weakened reuse detection where it matters.
-  const ctx = makeTestApp()
+  const ctx = makeTestApp({ REFRESH_TOKEN_REUSE_GRACE: '0' })
   const s = await seed(ctx)
   const old = await refreshTokenFor(ctx, s, s.pub.audience)
   const rotated = await refresh(ctx, old)
@@ -257,6 +257,20 @@ Deno.test('refresh: replaying a rotated public token still revokes the family', 
 
   await assertError(await refresh(ctx, old), 400, 'invalid_grant')
   await assertError(await refresh(ctx, current), 400, 'invalid_grant')
+})
+
+Deno.test('refresh: replaying a just-rotated token inside the grace window keeps the family', async () => {
+  // Runs against MySQL under make test-db too, where revoked_at is a DATETIME
+  // with no fractional seconds.
+  const ctx = makeTestApp()
+  const s = await seed(ctx)
+  const old = await refreshTokenFor(ctx, s, s.pub.audience)
+  const rotated = await refresh(ctx, old)
+  assertEquals(rotated.status, 200, 'setup: first rotation')
+  const current = (await rotated.json()).refresh_token
+
+  await assertError(await refresh(ctx, old), 400, 'invalid_grant')
+  assertEquals((await refresh(ctx, current)).status, 200)
 })
 
 // ---- revoke -----------------------------------------------------------------

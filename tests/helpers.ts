@@ -64,6 +64,9 @@ const testEnv = {
   JWT_ISSUER: 'http://test.local',
   LOG_LEVEL: 'silent',
   TOTP_ENCRYPTION_KEY: TEST_TOTP_KEY,
+  // Off by default in the app; most suites sign in through it (and guests
+  // need it), so tests opt in. The default itself is pinned in config.test.ts.
+  ALLOW_PASSWORD_GRANT: 'true',
 }
 
 export type TestContext = {

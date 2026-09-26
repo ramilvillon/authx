@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assert, assertEquals } from '@std/assert'
 import { Hono } from 'hono'
 import type { AppEnv } from '../../src/deps.ts'
 import { createMemoryRateLimitStore } from '../../src/lib/rate-limit-store.ts'
@@ -27,7 +27,32 @@ Deno.test('limiter blocks after the configured number of hits', async () => {
 
   assertEquals((await hit()).status, 200)
   assertEquals((await hit()).status, 200)
-  assertEquals((await hit()).status, 429)
+  const res = await hit()
+  assertEquals(res.status, 429)
+  // JSON, not the library's plain-text default: OAuth client libraries refuse
+  // a non-JSON token-endpoint error as the wrong content type.
+  assertEquals(await res.json(), {
+    error: { code: 'rate_limited', message: 'too many requests' },
+  })
+  assert(res.headers.get('retry-after'))
+})
+
+Deno.test('limiter answers the token endpoints in the flat RFC 6749 shape', async () => {
+  const app = new Hono<AppEnv>()
+    .use(
+      '*',
+      makeRateLimiter(createMemoryRateLimitStore(), {
+        windowMs: 60000,
+        limit: 0,
+      }),
+    )
+    .post('/oauth/token', (c) => c.text('ok'))
+  const res = await app.request('/oauth/token', { method: 'POST' })
+  assertEquals(res.status, 429)
+  assertEquals(await res.json(), {
+    error: 'rate_limited',
+    error_description: 'too many requests',
+  })
 })
 
 Deno.test('limiter tracks clients independently by key', async () => {

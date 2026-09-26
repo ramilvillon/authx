@@ -28,7 +28,7 @@ async function grantTypes(app: ReturnType<typeof makeTestApp>['app']) {
     .json()).grant_types_supported as string[]
 }
 
-Deno.test('the password grant works and is advertised by default', async () => {
+Deno.test('the password grant works and is advertised when enabled', async () => {
   const ctx = await setup({})
   assertEquals((await ctx.grant()).status, 200)
   assert((await grantTypes(ctx.app)).includes('password'))

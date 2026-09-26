@@ -130,6 +130,8 @@ export const ERRORS = {
       'no two-factor setup in progress; start one with POST /users/me/totp',
   },
   totp_invalid_code: { status: 400, message: 'that code is not valid' },
+  // Sent by every rate limiter; Retry-After says when to try again.
+  rate_limited: { status: 429, message: 'too many requests' },
   // A guest signs in only through the password grant, which refuses TOTP
   // users; TOTP on a guest would be a self-inflicted lockout.
   // A passwordless (Google-only) account proves itself by signing in again:
